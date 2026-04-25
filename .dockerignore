@@ -1,0 +1,37 @@
+# dependencies and build artifacts (rebuilt inside the image)
+node_modules
+.next
+dist
+build
+out
+
+# runtime data (cookies, sqlite, audio cache) — NEVER ship into image
+data
+
+# env and secrets
+.env
+.env.local
+.env.*.local
+
+# logs and editor state
+*.log
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# git internals
+.git
+.gitignore
+
+# docs and meta that don't belong in the image
+README.md
+PLAN.md
+Progress.md
+*.md
+.dockerignore
+Dockerfile
+docker-compose.yml
+
+# tsbuildinfo
+*.tsbuildinfo

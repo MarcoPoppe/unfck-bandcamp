@@ -1,0 +1,37 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+next-env.d.ts
+
+# build
+dist/
+build/
+
+# data (DB, cookies, audio cache)
+data/
+!data/.gitkeep
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# typescript
+*.tsbuildinfo
+
+# editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,21 @@
+services:
+  unfck-bandcamp:
+    build: .
+    image: unfck-bandcamp:latest
+    container_name: unfck-bandcamp
+    ports:
+      - "3457:3457"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/unfck.db
+      - AUDIO_CACHE_DIR=/app/data/audio_cache
+      - COOKIE_FILE=/app/data/bc_cookies.txt
+      - SYNC_INTERVAL_MIN=360
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3457/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

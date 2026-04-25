@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    font-feature-settings: 'rlig' 1, 'calt' 1;
+  }
+
+  ::selection {
+    background-color: theme('colors.accent.DEFAULT');
+    color: theme('colors.fg.primary');
+  }
+}
