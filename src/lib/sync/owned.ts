@@ -105,17 +105,34 @@ function finishRun(
  * removed from the user's bandcamp collection). We never DELETE because
  * later phases will reference these rows from playlists and tags; instead
  * we set `removed_at` so callers can filter via `WHERE removed_at IS NULL`.
+ *
+ * Cascades to child tracks: any track whose source_collection_item_id points
+ * at a now-tombstoned item gets its own `removed_at` set.
  */
 function tombstoneMissing(runId: number): number {
-  const info = getDb()
-    .prepare(
-      `UPDATE collection_items
+  const db = getDb();
+  let itemChanges = 0;
+  const tx = db.transaction(() => {
+    const info = db
+      .prepare(
+        `UPDATE collection_items
+           SET removed_at = datetime('now')
+           WHERE removed_at IS NULL
+             AND (last_seen_run_id IS NULL OR last_seen_run_id < ?)`,
+      )
+      .run(runId);
+    itemChanges = info.changes;
+    db.prepare(
+      `UPDATE tracks
          SET removed_at = datetime('now')
          WHERE removed_at IS NULL
-           AND (last_seen_run_id IS NULL OR last_seen_run_id < ?)`,
-    )
-    .run(runId);
-  return info.changes;
+           AND source_collection_item_id IN (
+             SELECT id FROM collection_items WHERE removed_at IS NOT NULL
+           )`,
+    ).run();
+  });
+  tx.immediate();
+  return itemChanges;
 }
 
 /**

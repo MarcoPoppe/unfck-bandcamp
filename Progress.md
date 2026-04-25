@@ -1,48 +1,74 @@
 # Unfck Bandcamp
 
-**Status:** Scope final, vor MVP-Bau
+**Status:** Phase 0, 1, 2A done — Phase 2B (Wavesurfer + Sticky Player + AWSD) offen
 **Angelegt:** 2026-04-25
 
-## Vision
+## Was Marco morgen frueh sehen kann
 
-Self-Host-Tool, das Bandcamps schlechte Musiksuche durch ein Beatport-aehnliches UI ersetzt. Marco baut es zuerst fuer sich, dann fuer einen kleinen Freundeskreis als Docker-Distribution.
+`cd C:\Users\marco\Claude\unfck_bandcamp && npm run dev`, dann http://localhost:3457:
 
-Kein SaaS, kein zentraler Server. Jeder hostet lokal mit eigenem BC-Account.
+- **/setup** — Cookie-Paste (auto-prefill aus `data/bc_cookies.txt`), Validate, dann Owned-Sync
+- **/** — Home zeigt eingeloggten Status + Owned-Count + Last-Sync, plus Buttons fuer /tracks und /setup
+- **/tracks** — Beatport-Style flache Track-Liste der gekauften Releases. Klick "Tracks expandieren" um Album-Items in einzelne Tracks aufzubrechen. Play-Button auf jedem Track spielt direkt im sticky-bottom-Player (native HTML5 audio, Wavesurfer kommt in Part B).
+
+Smoke-Test gegen Marcos echtes BC-Konto:
+- 36 Collection Items via Fan-API → 36 collection_items in DB
+- 36 Items expanded zu 44 Tracks via Release-Page-Scrape, alle mit Stream-URLs
+- /api/audio/stream liefert HTTP 200, 4.4 MB MP3, 128 kbps, sauber an HTML5 audio dispatchable
+- Auto-Advance funktioniert, ueberspringt streamlose Tracks
 
 ## Strategie
 
-**Neustart**, kein Fork. SoundFinder bleibt unangetastet, Module werden gezielt portiert (Bandcamp-Scraping, Fan-API, Audio-Proxy, Player-Komponenten).
+Self-Host-Tool, Beatport-Style UI fuer Bandcamp. Marco zuerst, dann kleiner Freundeskreis als Docker-Distribution. Kein SaaS, kein zentraler Server.
 
-## MVP-Scope (4-6 Wochen)
+Neuaufbau, nicht Fork. SoundFinder bleibt unangetastet, BC-Module wurden aus SF-Wissen rekonstruiert (BC hat das Schema in vielen Stellen umgebaut: `item_cache.collection` statt `collection_data.items`, `data-tralbum="..."` statt `var TralbumData`).
 
-1. BC-Account-Login (Cookie-Paste aus DevTools)
-2. Owned-Sync aus BC-Collection
-3. Beatport-Style Track-Liste mit Player
-4. Following Artists/Labels/Diggers
-5. Wishlist + Cart-Stage mit Auto-Mark-as-Bought via Owned-Sync
-6. Persoenliche DB: Gehoert, Like/Dislike, Tags, Playlists
-7. Docker-Compose Distribution
+## Phasen-Status
 
-**v2:** Vorschlagssystem (Following-Graph-basiert)
+- [x] **Phase 0 (Skelett)** — git tag `phase-0`, Codex 2 Pässe clean
+- [x] **Phase 1 (BC-Login + Owned-Sync)** — git tag `phase-1`, Codex 2 Pässe, alle Findings adressiert oder dokumentiert
+- [x] **Phase 2A (Track-Expansion + Basic Player)** — git tag `phase-2a`, Codex 2 Pässe, alle Findings adressiert oder dokumentiert
+- [ ] **Phase 2B (Wavesurfer + Sticky Bar + AWSD + Audio-Cache)** — naechste Session
+- [ ] **Phase 3 (Following + Discovery)**
+- [ ] **Phase 4 (Wishlist + Cart-Stage + Auto-Mark-as-Bought)**
+- [ ] **Phase 5 (Tags + Playlists + History)**
+- [ ] **Phase 6 (Docker + Distribution)**
 
-## Wishlist-Loesung (statt Cart-Push)
+## Stack
 
-Nutzer markiert Tracks im Korb. Direktlink zu bandcamp.com pro Item. Background-Sync ueber Fan-API matched Collection gegen Wishlist und entfernt gekaufte Items automatisch. Multi-Select als manuelles Override.
+- Next.js 16.2.4 (App Router) + TypeScript strict
+- Tailwind 3 (dark default, hoher Kontrast)
+- better-sqlite3 12.9.0 (WAL, IMMEDIATE-Tx, instrumentation hook auto-migrates)
+- cheerio 1.0 (parser, aber HTML-Parsing ist regex-basiert wo schneller)
+- Zustand 5 (Player-Store)
+- yt-dlp Binary 2026.03.17 (im Dockerfile gepinnt mit SHA256, fuer Phase 2B Audio-Cache)
+- ffmpeg im Container
 
-## Naechste Schritte (Reihenfolge)
+## Datenmodell (Stand Phase 2A)
 
-- [ ] Tag 1-2: Repo-Skelett (Next.js + better-sqlite3 + httpx + Tailwind + wavesurfer, leere DB, leere Routes)
-- [ ] Tag 3-5: BC-Login + Owned-Sync (Fan-API-Modul aus SF portieren)
-- [ ] Tag 6-10: TrackRow + StickyPlayerBar (aus SF portieren, BC-only)
-- [ ] Tag 11-15: Following Artists/Labels/Diggers (Crawler aus SF portieren)
-- [ ] Tag 16-20: Wishlist + Cart-Stage + Auto-Mark-as-Bought
-- [ ] Tag 21-25: Tags, Playlists, Listen-History
-- [ ] Tag 26-30: Docker + Distribution + README
+- `auth` (single-row, CHECK id=1) — cookie_string, fan_id, username, email
+- `collection_items` — Owned-Items aus BC Fan-API, idempotent upsert auf (bc_item_id, bc_item_type), tombstone via removed_at
+- `tracks` — pro-Track-Granularitaet, expanded aus collection_items via release-page-scrape, mit purchased_at denormalisiert
+- `sync_runs` — Audit-Log, instrumentation reaped stale `running` rows beim Server-Start
+
+## Verschoben fuer Phase 2B oder spaeter
+
+Aus Codex-Reviews dokumentiert, nicht in Phase 2A umgesetzt:
+- TTL fuer Stream-URL-Cache (aktuell 30 min, Comment markiert als SPECULATION)
+- Adaptive Backoff bei Track-Expansion (aktuell starres 350ms-Delay)
+- Audio-Lokal-Cache via yt-dlp (Phase 2B)
+- Wavesurfer Waveform-Player (Phase 2B)
+- AWSD-Shortcuts (Phase 2B)
+- Encrypted cookies-at-rest (Phase 6)
+- Suffix-Range im Audio-Stream (Range `bytes=-N`) (Edge-Case, akzeptabel)
+
+## Naechste Session
+
+Phase 2B starten (Wavesurfer-Player + Sticky-Bar + AWSD). Player-Store ist bereits da — Phase 2B ist UI-Refactor, kein Daten-Refactor.
 
 ## Log
 
-- 2026-04-25: Projekt angelegt
-- 2026-04-25: Pivot von SaaS zu Self-Host
-- 2026-04-25: Strategie final = Neustart, kein Fork (Marcos Bauchgefuehl bestaetigt nach Code-Review)
-- 2026-04-25: MVP-Scope final inkl. Wishlist mit Auto-Mark-as-Bought
-- 2026-04-25: BC-Login = Cookie-Paste (Methode a)
+- 2026-04-25: Projekt angelegt, Strategie geklaert (Self-Host, Neuaufbau, BC-Login Cookie-Paste a)
+- 2026-04-25: Phase 0 done (Skelett, Migrations, Docker-Stub, Health-Endpoint)
+- 2026-04-25: Phase 1 done (BC-Login + Owned-Sync, 36 Items vom echten BC)
+- 2026-04-25: Phase 2A done (Track-Expansion zu 44 Tracks + Basic Player + native audio playback verified)

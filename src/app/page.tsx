@@ -45,15 +45,18 @@ export default function HomePage() {
       </div>
       <div className="mt-8 flex gap-3">
         <Link
+          href="/tracks"
+          className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-primary transition-colors hover:bg-accent-hover"
+        >
+          Tracks öffnen
+        </Link>
+        <Link
           href="/setup"
           className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
         >
           Setup
         </Link>
       </div>
-      <p className="mt-12 text-xs text-fg-muted">
-        Phase 2 (Player + TrackRow) noch nicht gebaut.
-      </p>
     </main>
   );
 }

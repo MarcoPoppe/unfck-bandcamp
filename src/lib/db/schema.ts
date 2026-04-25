@@ -94,4 +94,54 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 4,
+    name: 'phase2_tracks',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS tracks (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_track_id INTEGER NOT NULL UNIQUE,
+           bc_album_id INTEGER,
+           title TEXT NOT NULL,
+           artist_name TEXT,
+           artist_url TEXT,
+           album_title TEXT,
+           album_url TEXT,
+           duration_seconds REAL,
+           track_number INTEGER,
+           cover_url TEXT,
+           bc_url TEXT NOT NULL,
+           stream_url TEXT,
+           stream_url_fetched_at TEXT,
+           source_collection_item_id INTEGER,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           last_seen_run_id INTEGER,
+           removed_at TEXT,
+           FOREIGN KEY (source_collection_item_id) REFERENCES collection_items(id) ON DELETE SET NULL
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_artist ON tracks (artist_name)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_album ON tracks (album_url)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_source ON tracks (source_collection_item_id)',
+      ).run();
+    },
+  },
+  {
+    id: 5,
+    name: 'phase2_tracks_purchased_at',
+    up: (db) => {
+      // Denormalize purchased_at from the source collection_item so chronological
+      // sort works even after a tombstone nulls out source_collection_item_id.
+      db.prepare('ALTER TABLE tracks ADD COLUMN purchased_at TEXT').run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_purchased_at ON tracks (purchased_at DESC)',
+      ).run();
+    },
+  },
 ];
