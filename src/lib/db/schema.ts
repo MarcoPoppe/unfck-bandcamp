@@ -144,4 +144,105 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 6,
+    name: 'phase3_following',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS artists (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_url TEXT NOT NULL UNIQUE,
+           name TEXT NOT NULL,
+           bc_band_id INTEGER,
+           image_url TEXT,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           last_crawled_at TEXT
+         )`,
+      ).run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_artists_band_id ON artists (bc_band_id)').run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_artists_name ON artists (name)').run();
+
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS labels (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_url TEXT NOT NULL UNIQUE,
+           name TEXT NOT NULL,
+           image_url TEXT,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           last_crawled_at TEXT
+         )`,
+      ).run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_labels_name ON labels (name)').run();
+
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS diggers (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_username TEXT NOT NULL UNIQUE,
+           bc_fan_id INTEGER UNIQUE,
+           display_name TEXT,
+           image_url TEXT,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           last_crawled_at TEXT
+         )`,
+      ).run();
+
+      // Polymorphic following: entity_type points at artists/labels/diggers.
+      // Application-level FK because SQLite cannot polymorphic-reference.
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS following (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           entity_type TEXT NOT NULL CHECK (entity_type IN ('artist', 'label', 'digger')),
+           entity_id INTEGER NOT NULL,
+           followed_at TEXT NOT NULL DEFAULT (datetime('now')),
+           UNIQUE (entity_type, entity_id)
+         )`,
+      ).run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_following_type ON following (entity_type)').run();
+
+      // Tracks now point at their artist/label so discovery queries can join.
+      db.prepare('ALTER TABLE tracks ADD COLUMN artist_id INTEGER REFERENCES artists(id)').run();
+      db.prepare('ALTER TABLE tracks ADD COLUMN label_id INTEGER REFERENCES labels(id)').run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_tracks_artist_id ON tracks (artist_id)').run();
+      db.prepare('CREATE INDEX IF NOT EXISTS idx_tracks_label_id ON tracks (label_id)').run();
+
+      // Discovery feed: tracks that came in via following-crawls (not in
+      // owned collection). source = 'crawl_artist' / 'crawl_label' / 'crawl_digger'.
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS discovered_tracks (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_track_id INTEGER NOT NULL UNIQUE,
+           bc_album_id INTEGER,
+           title TEXT NOT NULL,
+           artist_id INTEGER REFERENCES artists(id),
+           artist_name TEXT,
+           artist_url TEXT,
+           album_title TEXT,
+           album_url TEXT,
+           label_id INTEGER REFERENCES labels(id),
+           label_name TEXT,
+           cover_url TEXT,
+           bc_url TEXT NOT NULL,
+           release_date TEXT,
+           duration_seconds REAL,
+           track_number INTEGER,
+           stream_url TEXT,
+           stream_url_fetched_at TEXT,
+           discovered_via TEXT NOT NULL,
+           discovered_via_entity_id INTEGER,
+           first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+           last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+           dismissed_at TEXT
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_discovered_first_seen ON discovered_tracks (first_seen_at DESC)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_discovered_via ON discovered_tracks (discovered_via, discovered_via_entity_id)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_discovered_artist ON discovered_tracks (artist_id)',
+      ).run();
+    },
+  },
 ];

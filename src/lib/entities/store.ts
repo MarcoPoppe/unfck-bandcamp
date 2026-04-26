@@ -1,0 +1,285 @@
+import { getDb } from '../db';
+
+export interface ArtistRow {
+  id: number;
+  bcUrl: string;
+  name: string;
+  bcBandId: number | null;
+  imageUrl: string | null;
+  addedAt: string;
+  lastCrawledAt: string | null;
+  isFollowed: boolean;
+}
+
+export interface LabelRow {
+  id: number;
+  bcUrl: string;
+  name: string;
+  imageUrl: string | null;
+  addedAt: string;
+  lastCrawledAt: string | null;
+  isFollowed: boolean;
+}
+
+export interface DiggerRow {
+  id: number;
+  bcUsername: string;
+  bcFanId: number | null;
+  displayName: string | null;
+  imageUrl: string | null;
+  addedAt: string;
+  lastCrawledAt: string | null;
+  isFollowed: boolean;
+}
+
+export type EntityType = 'artist' | 'label' | 'digger';
+
+export function normalizeBcUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}`.toLowerCase();
+  } catch {
+    return url.replace(/\/+$/, '').replace(/[?#].*$/, '').toLowerCase();
+  }
+}
+
+export function upsertArtist(input: {
+  bcUrl: string;
+  name: string;
+  bcBandId?: number | null;
+  imageUrl?: string | null;
+}): number {
+  const bcUrl = normalizeBcUrl(input.bcUrl);
+  const db = getDb();
+
+  // Resolution priority: bc_band_id is the most stable identifier (custom
+  // domain + bandcamp.com subdomain share it), fall back to bc_url. Guard
+  // against poisoned ids (negative, zero, non-integer) — only positive ints
+  // are valid bandcamp band ids.
+  if (
+    typeof input.bcBandId === 'number' &&
+    Number.isInteger(input.bcBandId) &&
+    input.bcBandId > 0
+  ) {
+    const byBandId = db
+      .prepare<[number], { id: number }>(
+        'SELECT id FROM artists WHERE bc_band_id = ?',
+      )
+      .get(input.bcBandId);
+    if (byBandId) {
+      db.prepare(
+        `UPDATE artists SET
+           name = COALESCE(?, name),
+           image_url = COALESCE(?, image_url)
+         WHERE id = ?`,
+      ).run(input.name, input.imageUrl ?? null, byBandId.id);
+      return byBandId.id;
+    }
+  }
+  const existing = db
+    .prepare<[string], { id: number }>('SELECT id FROM artists WHERE bc_url = ?')
+    .get(bcUrl);
+  if (existing) {
+    db.prepare(
+      `UPDATE artists SET
+         name = COALESCE(?, name),
+         bc_band_id = COALESCE(?, bc_band_id),
+         image_url = COALESCE(?, image_url)
+       WHERE id = ?`,
+    ).run(input.name, input.bcBandId ?? null, input.imageUrl ?? null, existing.id);
+    return existing.id;
+  }
+  const info = db
+    .prepare(
+      'INSERT INTO artists (bc_url, name, bc_band_id, image_url) VALUES (?, ?, ?, ?)',
+    )
+    .run(bcUrl, input.name, input.bcBandId ?? null, input.imageUrl ?? null);
+  return Number(info.lastInsertRowid);
+}
+
+export function upsertLabel(input: {
+  bcUrl: string;
+  name: string;
+  imageUrl?: string | null;
+}): number {
+  const bcUrl = normalizeBcUrl(input.bcUrl);
+  const db = getDb();
+  const existing = db
+    .prepare<[string], { id: number }>('SELECT id FROM labels WHERE bc_url = ?')
+    .get(bcUrl);
+  if (existing) {
+    db.prepare(
+      `UPDATE labels SET name = COALESCE(?, name), image_url = COALESCE(?, image_url) WHERE id = ?`,
+    ).run(input.name, input.imageUrl ?? null, existing.id);
+    return existing.id;
+  }
+  const info = db
+    .prepare('INSERT INTO labels (bc_url, name, image_url) VALUES (?, ?, ?)')
+    .run(bcUrl, input.name, input.imageUrl ?? null);
+  return Number(info.lastInsertRowid);
+}
+
+export function upsertDigger(input: {
+  bcUsername: string;
+  bcFanId?: number | null;
+  displayName?: string | null;
+  imageUrl?: string | null;
+}): number {
+  const username = input.bcUsername.trim();
+  const db = getDb();
+  const existing = db
+    .prepare<[string], { id: number }>('SELECT id FROM diggers WHERE bc_username = ?')
+    .get(username);
+  if (existing) {
+    db.prepare(
+      `UPDATE diggers SET
+         bc_fan_id = COALESCE(?, bc_fan_id),
+         display_name = COALESCE(?, display_name),
+         image_url = COALESCE(?, image_url)
+       WHERE id = ?`,
+    ).run(
+      input.bcFanId ?? null,
+      input.displayName ?? null,
+      input.imageUrl ?? null,
+      existing.id,
+    );
+    return existing.id;
+  }
+  const info = db
+    .prepare(
+      'INSERT INTO diggers (bc_username, bc_fan_id, display_name, image_url) VALUES (?, ?, ?, ?)',
+    )
+    .run(
+      username,
+      input.bcFanId ?? null,
+      input.displayName ?? null,
+      input.imageUrl ?? null,
+    );
+  return Number(info.lastInsertRowid);
+}
+
+export function follow(entityType: EntityType, entityId: number): boolean {
+  const info = getDb()
+    .prepare(
+      `INSERT INTO following (entity_type, entity_id) VALUES (?, ?)
+       ON CONFLICT (entity_type, entity_id) DO NOTHING`,
+    )
+    .run(entityType, entityId);
+  return info.changes > 0;
+}
+
+export function unfollow(entityType: EntityType, entityId: number): boolean {
+  const info = getDb()
+    .prepare('DELETE FROM following WHERE entity_type = ? AND entity_id = ?')
+    .run(entityType, entityId);
+  return info.changes > 0;
+}
+
+export function listFollowedArtists(): ArtistRow[] {
+  const rows = getDb()
+    .prepare<
+      [],
+      {
+        id: number;
+        bc_url: string;
+        name: string;
+        bc_band_id: number | null;
+        image_url: string | null;
+        added_at: string;
+        last_crawled_at: string | null;
+      }
+    >(
+      `SELECT a.id, a.bc_url, a.name, a.bc_band_id, a.image_url, a.added_at, a.last_crawled_at
+         FROM artists a INNER JOIN following f
+           ON f.entity_type = 'artist' AND f.entity_id = a.id
+         ORDER BY f.followed_at DESC`,
+    )
+    .all();
+  return rows.map((r) => ({
+    id: r.id,
+    bcUrl: r.bc_url,
+    name: r.name,
+    bcBandId: r.bc_band_id,
+    imageUrl: r.image_url,
+    addedAt: r.added_at,
+    lastCrawledAt: r.last_crawled_at,
+    isFollowed: true,
+  }));
+}
+
+export function listFollowedLabels(): LabelRow[] {
+  const rows = getDb()
+    .prepare<
+      [],
+      {
+        id: number;
+        bc_url: string;
+        name: string;
+        image_url: string | null;
+        added_at: string;
+        last_crawled_at: string | null;
+      }
+    >(
+      `SELECT l.id, l.bc_url, l.name, l.image_url, l.added_at, l.last_crawled_at
+         FROM labels l INNER JOIN following f
+           ON f.entity_type = 'label' AND f.entity_id = l.id
+         ORDER BY f.followed_at DESC`,
+    )
+    .all();
+  return rows.map((r) => ({
+    id: r.id,
+    bcUrl: r.bc_url,
+    name: r.name,
+    imageUrl: r.image_url,
+    addedAt: r.added_at,
+    lastCrawledAt: r.last_crawled_at,
+    isFollowed: true,
+  }));
+}
+
+export function listFollowedDiggers(): DiggerRow[] {
+  const rows = getDb()
+    .prepare<
+      [],
+      {
+        id: number;
+        bc_username: string;
+        bc_fan_id: number | null;
+        display_name: string | null;
+        image_url: string | null;
+        added_at: string;
+        last_crawled_at: string | null;
+      }
+    >(
+      `SELECT d.id, d.bc_username, d.bc_fan_id, d.display_name, d.image_url, d.added_at, d.last_crawled_at
+         FROM diggers d INNER JOIN following f
+           ON f.entity_type = 'digger' AND f.entity_id = d.id
+         ORDER BY f.followed_at DESC`,
+    )
+    .all();
+  return rows.map((r) => ({
+    id: r.id,
+    bcUsername: r.bc_username,
+    bcFanId: r.bc_fan_id,
+    displayName: r.display_name,
+    imageUrl: r.image_url,
+    addedAt: r.added_at,
+    lastCrawledAt: r.last_crawled_at,
+    isFollowed: true,
+  }));
+}
+
+export function attachArtistAndLabelToTracks(): { updated: number } {
+  const db = getDb();
+  const info = db
+    .prepare(
+      `UPDATE tracks
+         SET artist_id = (
+           SELECT a.id FROM artists a WHERE a.bc_url = LOWER(tracks.artist_url)
+           LIMIT 1
+         )
+         WHERE artist_id IS NULL AND artist_url IS NOT NULL`,
+    )
+    .run();
+  return { updated: info.changes };
+}

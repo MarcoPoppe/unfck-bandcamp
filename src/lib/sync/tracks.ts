@@ -2,6 +2,7 @@ import { getDb } from '../db';
 import { fetchReleasePage } from '../bandcamp/fetch_release';
 import { getStoredAuth } from '../auth/store';
 import type { BcReleaseInfo, BcTrackInfo } from '../bandcamp/parse_release';
+import { upsertArtist, upsertLabel } from '../entities/store';
 
 interface CollectionItemRow {
   id: number;
@@ -35,16 +36,17 @@ function getUnexpandedItems(): CollectionItemRow[] {
 function upsertTrackStmt() {
   return getDb().prepare(
     `INSERT INTO tracks (
-       bc_track_id, bc_album_id, title, artist_name, artist_url,
+       bc_track_id, bc_album_id, title, artist_name, artist_url, artist_id,
        album_title, album_url, duration_seconds, track_number,
        cover_url, bc_url, stream_url, stream_url_fetched_at,
        source_collection_item_id, purchased_at, last_seen_run_id, removed_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
      ON CONFLICT (bc_track_id) DO UPDATE SET
        bc_album_id = excluded.bc_album_id,
        title = excluded.title,
        artist_name = excluded.artist_name,
        artist_url = excluded.artist_url,
+       artist_id = COALESCE(excluded.artist_id, tracks.artist_id),
        album_title = excluded.album_title,
        album_url = excluded.album_url,
        duration_seconds = excluded.duration_seconds,
@@ -67,6 +69,16 @@ function persistRelease(
 ): number {
   const stmt = upsertTrackStmt();
   const now = new Date().toISOString();
+  // Upsert artist row (and label row when bandcamp gave us label_url; we
+  // currently only have label_name so we skip the label here — Phase 3 manual
+  // label-adds populate the labels table).
+  let artistId: number | null = null;
+  if (release.artistName && release.artistUrl) {
+    artistId = upsertArtist({
+      bcUrl: release.artistUrl,
+      name: release.artistName,
+    });
+  }
   const tx = getDb().transaction((tracks: BcTrackInfo[]) => {
     for (const t of tracks) {
       const albumId = release.releaseType === 'a' ? release.bcReleaseId : null;
@@ -76,6 +88,7 @@ function persistRelease(
         t.title,
         release.artistName,
         release.artistUrl,
+        artistId,
         release.albumTitle,
         release.albumUrl,
         t.durationSeconds,
@@ -93,6 +106,9 @@ function persistRelease(
   tx(release.tracks);
   return release.tracks.length;
 }
+
+// Suppress unused-import lint when label is referenced indirectly.
+void upsertLabel;
 
 export interface TrackExpansionResult {
   itemsExpanded: number;

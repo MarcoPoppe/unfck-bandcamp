@@ -10,8 +10,41 @@ export interface BcRequestOptions {
   signal?: AbortSignal;
 }
 
+const RETRYABLE_STATUSES = new Set([429, 500, 502, 503, 504]);
+const RETRY_BASE_DELAY_MS = 600;
+const RETRY_MAX_ATTEMPTS = 3;
+
+function jitteredDelay(attempt: number): number {
+  const base = RETRY_BASE_DELAY_MS * 2 ** attempt;
+  return base + Math.floor(Math.random() * 250);
+}
+
+async function fetchWithRetry(
+  url: string,
+  init: RequestInit,
+): Promise<Response> {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < RETRY_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetch(url, init);
+      if (RETRYABLE_STATUSES.has(res.status) && attempt < RETRY_MAX_ATTEMPTS - 1) {
+        // Drain body so the connection can be released.
+        await res.arrayBuffer().catch(() => undefined);
+        await new Promise((r) => setTimeout(r, jitteredDelay(attempt)));
+        continue;
+      }
+      return res;
+    } catch (err) {
+      lastError = err;
+      if (attempt >= RETRY_MAX_ATTEMPTS - 1) throw err;
+      await new Promise((r) => setTimeout(r, jitteredDelay(attempt)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('bandcamp request failed');
+}
+
 export async function bcGet(url: string, opts: BcRequestOptions): Promise<Response> {
-  return fetch(url, {
+  return fetchWithRetry(url, {
     method: 'GET',
     headers: {
       Cookie: opts.cookieString,
@@ -29,7 +62,7 @@ export async function bcPostJson<T>(
   body: unknown,
   opts: BcRequestOptions,
 ): Promise<T> {
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: 'POST',
     headers: {
       Cookie: opts.cookieString,

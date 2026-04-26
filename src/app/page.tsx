@@ -43,12 +43,24 @@ export default function HomePage() {
           </div>
         </div>
       </div>
-      <div className="mt-8 flex gap-3">
+      <div className="mt-8 flex flex-wrap gap-3">
         <Link
           href="/tracks"
           className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-primary transition-colors hover:bg-accent-hover"
         >
-          Tracks öffnen
+          Tracks
+        </Link>
+        <Link
+          href="/discover"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          Discover
+        </Link>
+        <Link
+          href="/follows"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          Follows
         </Link>
         <Link
           href="/setup"
