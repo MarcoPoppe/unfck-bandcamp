@@ -14,7 +14,10 @@ services:
       - DATABASE_PATH=/app/data/unfck.db
       - AUDIO_CACHE_DIR=/app/data/audio_cache
       - COOKIE_FILE=/app/data/bc_cookies.txt
-      - SYNC_INTERVAL_MIN=360
+      - SYNC_INTERVAL_MIN=${SYNC_INTERVAL_MIN:-360}
+      - MAX_AUDIO_CACHE_BYTES=${MAX_AUDIO_CACHE_BYTES:-2147483648}
+      - DISCOVERY_RELEASES_PER_ARTIST=${DISCOVERY_RELEASES_PER_ARTIST:-12}
+      - YTDLP_PATH=${YTDLP_PATH:-/usr/local/bin/yt-dlp}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3457/api/health"]

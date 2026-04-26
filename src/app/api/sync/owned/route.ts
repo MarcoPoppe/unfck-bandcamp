@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { syncOwnedCollection } from '@/lib/sync/owned';
+import { assertLocalRequest, NO_STORE_HEADERS } from '@/lib/http/local_only';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -10,6 +11,9 @@ interface SyncBody {
 }
 
 export async function POST(req: Request) {
+  const local = assertLocalRequest(req);
+  if (local) return local;
+
   let body: SyncBody = {};
   try {
     body = (await req.json()) as SyncBody;
@@ -19,9 +23,12 @@ export async function POST(req: Request) {
 
   try {
     const result = await syncOwnedCollection(body.maxItems);
-    return NextResponse.json({ ok: true, ...result });
+    return NextResponse.json({ ok: true, ...result }, { headers: NO_STORE_HEADERS });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error';
-    return NextResponse.json({ ok: false, error: message }, { status: 400 });
+    return NextResponse.json(
+      { ok: false, error: message },
+      { status: 400, headers: NO_STORE_HEADERS },
+    );
   }
 }
