@@ -69,6 +69,24 @@ export default function HomePage() {
           Wishlist
         </Link>
         <Link
+          href="/playlists"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          Playlists
+        </Link>
+        <Link
+          href="/tags"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          Tags
+        </Link>
+        <Link
+          href="/history"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          History
+        </Link>
+        <Link
           href="/setup"
           className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
         >

@@ -135,6 +135,44 @@ export default function StickyPlayerBar() {
     };
   }, [setIsPlaying]);
 
+  // Record a play into track_plays once per track-load. We record at track-end
+  // (via onEnded -> advance) and at track-change (so partial listens get
+  // captured too). The completed_pct stays accurate because we read from
+  // the audio element at the moment of the change.
+  useEffect(() => {
+    if (!current) return;
+    const audio = audioRef.current;
+    const trackId = current.id;
+    // didFire guard prevents React Strict-mode double-invocation in dev from
+    // emitting two POST /api/plays for the same track-load (Codex pass-1
+    // finding 9). Production has single mount, so the guard is a no-op there.
+    let didFire = false;
+    return () => {
+      if (didFire) return;
+      didFire = true;
+      let pct: number | null = null;
+      let durationSec = 0;
+      if (audio && Number.isFinite(audio.duration) && audio.duration > 0) {
+        pct = Math.min(1, Math.max(0, audio.currentTime / audio.duration));
+        durationSec = audio.duration;
+      }
+      // Threshold: at least 5 seconds OR 10 % of the track played, whichever
+      // is smaller (Codex pass-1 finding 6 — the previous 1s threshold did
+      // not match the "gehoert ab 50 %" copy on /history). This still
+      // captures partial listens but skips drive-by clicks.
+      const minPlayedSec = audio
+        ? Math.min(5, Math.max(1, durationSec * 0.1))
+        : 5;
+      if (audio && audio.currentTime >= minPlayedSec) {
+        void fetch('/api/plays', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ trackId, completedPct: pct, source: 'player' }),
+        }).catch(() => {});
+      }
+    };
+  }, [current]);
+
   if (!current) {
     return (
       <>

@@ -274,4 +274,66 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 8,
+    name: 'phase5_tags_playlists_history',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS tags (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           name TEXT NOT NULL UNIQUE,
+           color TEXT NOT NULL DEFAULT '#7c5cff',
+           created_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS track_tags (
+           track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+           tag_id INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           PRIMARY KEY (track_id, tag_id)
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_track_tags_tag_id ON track_tags (tag_id)',
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS playlists (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           name TEXT NOT NULL,
+           description TEXT,
+           created_at TEXT NOT NULL DEFAULT (datetime('now')),
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS playlist_tracks (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+           track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+           position INTEGER NOT NULL,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           UNIQUE (playlist_id, track_id)
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_playlist_tracks_position ON playlist_tracks (playlist_id, position)',
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS track_plays (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+           played_at TEXT NOT NULL DEFAULT (datetime('now')),
+           completed_pct REAL,
+           source TEXT
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_track_plays_track_id ON track_plays (track_id)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_track_plays_played_at ON track_plays (played_at DESC)',
+      ).run();
+    },
+  },
 ];

@@ -3,8 +3,11 @@ services:
     build: .
     image: unfck-bandcamp:latest
     container_name: unfck-bandcamp
+    # Bind to loopback by default so the cookie-bearing endpoints are not
+    # reachable from the LAN. Override with `BIND_HOST=0.0.0.0` if you need
+    # remote access AND have set up a trusted reverse proxy with auth.
     ports:
-      - "3457:3457"
+      - "${BIND_HOST:-127.0.0.1}:3457:3457"
     volumes:
       - ./data:/app/data
     environment:

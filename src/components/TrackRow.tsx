@@ -2,6 +2,7 @@
 
 import { usePlayerStore } from '@/lib/store/player';
 import WishlistButton from './WishlistButton';
+import TrackActions from './TrackActions';
 
 export interface TrackRowData {
   id: number;
@@ -69,7 +70,7 @@ export default function TrackRow({ track }: Props) {
       <div className="text-right font-mono text-xs text-fg-muted">
         {formatDuration(track.durationSeconds)}
       </div>
-      <div className="text-center text-lg leading-none">
+      <div className="flex items-center justify-end gap-2 text-sm">
         {track.bcTrackId ? (
           <WishlistButton
             bcTrackId={track.bcTrackId}
@@ -82,6 +83,7 @@ export default function TrackRow({ track }: Props) {
         ) : (
           <span className="text-fg-muted opacity-30">♡</span>
         )}
+        <TrackActions trackId={track.id} />
       </div>
       <a
         href={track.bcUrl}
