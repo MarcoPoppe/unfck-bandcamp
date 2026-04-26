@@ -7,6 +7,7 @@ export interface PlayerState {
   isPlaying: boolean;
   setQueue: (queue: TrackRowData[]) => void;
   toggle: (id: number) => void;
+  setIsPlaying: (playing: boolean) => void;
   next: () => void;
   prev: () => void;
   stop: () => void;
@@ -31,15 +32,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isPlaying: false,
   setQueue: (queue) => set({ queue }),
   toggle: (id) => {
-    const { queue, currentId } = get();
+    const { queue, currentId, isPlaying } = get();
     const target = queue.find((t) => t.id === id);
     if (!target || !target.hasStream) return;
     if (currentId === id) {
-      set({ currentId: null, isPlaying: false });
+      // Same track: pause/resume toggle, keep currentId so the player keeps the position.
+      set({ isPlaying: !isPlaying });
     } else {
       set({ currentId: id, isPlaying: true });
     }
   },
+  setIsPlaying: (playing) => set({ isPlaying: playing }),
   next: () => {
     const { queue, currentId } = get();
     if (currentId == null || queue.length === 0) return;

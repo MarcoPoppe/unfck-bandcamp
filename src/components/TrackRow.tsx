@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
 import { usePlayerStore } from '@/lib/store/player';
 
 export interface TrackRowData {
@@ -81,49 +80,3 @@ export default function TrackRow({ track }: Props) {
   );
 }
 
-/**
- * Minimal native-audio player wired to the shared Zustand store. Phase 2 part B
- * will replace this with a Wavesurfer-backed sticky bar; the store already
- * exposes the queue/next/prev API the new player will consume, so the swap
- * stays a UI-only change.
- */
-export function MinimalPlayer() {
-  const queue = usePlayerStore((s) => s.queue);
-  const currentId = usePlayerStore((s) => s.currentId);
-  const advance = usePlayerStore((s) => s.next);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const current = queue.find((t) => t.id === currentId) ?? null;
-
-  useEffect(() => {
-    setError(null);
-    const audio = audioRef.current;
-    if (!audio || !current) return;
-    audio.src = `/api/audio/stream?id=${current.id}`;
-    audio.play().catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'play failed');
-    });
-  }, [current]);
-
-  if (!current) return null;
-  return (
-    <div className="sticky bottom-0 z-10 border-t border-border bg-bg-elevated p-3">
-      <div className="mx-auto flex max-w-5xl items-center gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium">{current.title}</div>
-          <div className="truncate text-xs text-fg-secondary">
-            {current.artistName ?? 'unknown artist'}
-          </div>
-          {error && <div className="mt-1 text-xs text-red-400">{error}</div>}
-        </div>
-        <audio
-          ref={audioRef}
-          controls
-          onEnded={advance}
-          className="h-9 max-w-md flex-1"
-        />
-      </div>
-    </div>
-  );
-}

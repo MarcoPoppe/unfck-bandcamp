@@ -1,16 +1,14 @@
 import { NextResponse } from 'next/server';
+import { Readable } from 'node:stream';
 import { getDb } from '@/lib/db';
 import { getStoredAuth } from '@/lib/auth/store';
 import { fetchReleasePage } from '@/lib/bandcamp/fetch_release';
 import { assertLocalRequest } from '@/lib/http/local_only';
+import { cacheStream, isCached, serveCachedFile } from '@/lib/audio/cache';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Single-tenant-self-host invariant: audio playback is only intended for the
-// owner of the bandcamp account, on the same machine. The stream endpoint
-// effectively rebroadcasts purchased streams via signed bandcamp URLs, which
-// must NOT be relayable off-box.
 const RANGE_RE = /^bytes=\d{1,19}-(?:\d{1,19})?$/;
 function sanitizeRange(raw: string | null): string | null {
   if (!raw) return null;
@@ -25,7 +23,7 @@ interface TrackRow {
   stream_url_fetched_at: string | null;
 }
 
-const STREAM_URL_TTL_MS = 30 * 60 * 1000; // 30 minutes — bandcamp signs for ~hours
+const STREAM_URL_TTL_MS = 30 * 60 * 1000;
 
 async function refreshStreamUrl(trackId: number): Promise<string | null> {
   const auth = getStoredAuth();
@@ -55,11 +53,9 @@ async function refreshStreamUrl(trackId: number): Promise<string | null> {
 }
 
 /**
- * Range-aware streaming proxy. Resolves the bandcamp signed mp3-128 URL
- * for the given track id, refreshing it lazily when the cached URL is
- * older than `STREAM_URL_TTL_MS`. The actual byte stream is fetched from
- * bandcamp's CDN and forwarded with the upstream Content-Length and
- * Content-Range so HTML5 audio scrubbing works.
+ * Audio streaming endpoint. Cache-first: if `data/audio_cache/track_<id>.mp3`
+ * exists, serve it directly with Range support. Otherwise proxy the bandcamp
+ * signed URL and fire a background cache write so the next play is local.
  */
 export async function GET(req: Request) {
   const local = assertLocalRequest(req);
@@ -73,6 +69,18 @@ export async function GET(req: Request) {
   const trackId = Number(idParam);
   if (!Number.isInteger(trackId) || trackId <= 0) {
     return NextResponse.json({ ok: false, error: 'invalid track id' }, { status: 400 });
+  }
+
+  const range = sanitizeRange(req.headers.get('range'));
+
+  if (isCached(trackId)) {
+    const served = serveCachedFile(trackId, range);
+    if (served) {
+      return new NextResponse(Readable.toWeb(served.stream as Readable) as never, {
+        status: served.status,
+        headers: served.headers,
+      });
+    }
   }
 
   const row = getDb()
@@ -99,15 +107,16 @@ export async function GET(req: Request) {
     );
   }
 
-  // Forward Range header so seek works, but only after sanitizing it: bandcamp
-  // doesn't support multi-range, and a malformed Range header would otherwise
-  // cause unpredictable upstream behaviour.
-  const range = sanitizeRange(req.headers.get('range'));
+  // Background cache, fire-and-forget. Failure here is non-fatal because the
+  // proxy still serves the current request.
+  cacheStream(trackId, streamUrl).catch(() => {
+    // logged-and-ignore by design
+  });
+
   const upstream = await fetch(streamUrl, {
     headers: range ? { Range: range } : {},
   });
   if (!upstream.ok && upstream.status !== 206) {
-    // If signed url expired between fetch and now, refresh once.
     const refreshed = await refreshStreamUrl(trackId);
     if (refreshed && refreshed !== streamUrl) {
       const retry = await fetch(refreshed, {
@@ -139,7 +148,6 @@ function passthroughHeaders(src: Headers): Headers {
     const v = src.get(k);
     if (v) out.set(k, v);
   }
-  // Stream URLs are short-lived signed URLs; never cache them on intermediaries.
   out.set('Cache-Control', 'no-store');
   return out;
 }
