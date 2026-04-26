@@ -3,6 +3,7 @@ import { fetchReleasePage } from '../bandcamp/fetch_release';
 import { getStoredAuth } from '../auth/store';
 import type { BcReleaseInfo, BcTrackInfo } from '../bandcamp/parse_release';
 import { upsertArtist, upsertLabel } from '../entities/store';
+import { autoMatchOwnedToWishlist } from '../wishlist/store';
 
 interface CollectionItemRow {
   id: number;
@@ -113,6 +114,7 @@ void upsertLabel;
 export interface TrackExpansionResult {
   itemsExpanded: number;
   tracksWritten: number;
+  wishlistAutoMarked: number;
   errors: { collectionItemId: number; bcUrl: string; error: string }[];
   durationMs: number;
 }
@@ -159,9 +161,21 @@ export async function expandCollectionToTracks(opts?: {
     }
   }
 
+  // After expansion the tracks-table contains rows for albums that were
+  // collected as albums. Sweep the wishlist: any open row whose bc_track_id
+  // is now in tracks (or in collection_items as a track-purchase) has
+  // effectively been bought.
+  let wishlistAutoMarked = 0;
+  try {
+    wishlistAutoMarked = autoMatchOwnedToWishlist().matchedCount;
+  } catch {
+    // wishlist sweep is best-effort
+  }
+
   return {
     itemsExpanded: targets.length,
     tracksWritten,
+    wishlistAutoMarked,
     errors,
     durationMs: Date.now() - startedAt,
   };

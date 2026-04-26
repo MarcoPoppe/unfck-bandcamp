@@ -1,6 +1,7 @@
 'use client';
 
 import { usePlayerStore } from '@/lib/store/player';
+import WishlistButton from './WishlistButton';
 
 export interface TrackRowData {
   id: number;
@@ -12,6 +13,7 @@ export interface TrackRowData {
   coverUrl: string | null;
   bcUrl: string;
   hasStream: boolean;
+  bcTrackId?: number;
 }
 
 interface Props {
@@ -33,7 +35,7 @@ export default function TrackRow({ track }: Props) {
 
   return (
     <div
-      className={`group grid grid-cols-[40px_56px_1fr_180px_60px_60px] items-center gap-3 border-b border-border px-3 py-2 transition-colors hover:bg-bg-hover ${
+      className={`group grid grid-cols-[40px_56px_1fr_180px_60px_30px_60px] items-center gap-3 border-b border-border px-3 py-2 transition-colors hover:bg-bg-hover ${
         isCurrent ? 'bg-bg-elevated' : 'bg-bg-surface'
       }`}
     >
@@ -66,6 +68,20 @@ export default function TrackRow({ track }: Props) {
       <div className="truncate text-sm text-fg-muted">{track.albumTitle ?? ''}</div>
       <div className="text-right font-mono text-xs text-fg-muted">
         {formatDuration(track.durationSeconds)}
+      </div>
+      <div className="text-center text-lg leading-none">
+        {track.bcTrackId ? (
+          <WishlistButton
+            bcTrackId={track.bcTrackId}
+            bcUrl={track.bcUrl}
+            title={track.title}
+            artistName={track.artistName}
+            albumTitle={track.albumTitle}
+            coverUrl={track.coverUrl}
+          />
+        ) : (
+          <span className="text-fg-muted opacity-30">♡</span>
+        )}
       </div>
       <a
         href={track.bcUrl}

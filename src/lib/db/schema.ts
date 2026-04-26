@@ -245,4 +245,33 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 7,
+    name: 'phase4_wishlist',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS wishlist (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_track_id INTEGER NOT NULL UNIQUE,
+           bc_url TEXT NOT NULL,
+           title TEXT NOT NULL,
+           artist_name TEXT,
+           album_title TEXT,
+           cover_url TEXT,
+           status TEXT NOT NULL CHECK (status IN ('open', 'bought', 'dismissed')) DEFAULT 'open',
+           source TEXT NOT NULL CHECK (source IN ('discovery', 'manual')) DEFAULT 'discovery',
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           bought_at TEXT,
+           bought_via TEXT CHECK (bought_via IS NULL OR bought_via IN ('manual', 'auto')),
+           dismissed_at TEXT
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_wishlist_status ON wishlist (status)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_wishlist_added_at ON wishlist (added_at DESC)',
+      ).run();
+    },
+  },
 ];

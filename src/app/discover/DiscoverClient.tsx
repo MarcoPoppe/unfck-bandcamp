@@ -18,6 +18,7 @@ interface DiscoveredTrackRow {
   trackNumber: number | null;
   hasStream: boolean;
 }
+// bcTrackId is propagated through to the wishlist button.
 
 interface Props {
   initialTracks: DiscoveredTrackRow[];
@@ -44,6 +45,7 @@ export default function DiscoverClient({ initialTracks }: Props) {
     coverUrl: t.coverUrl,
     bcUrl: t.bcUrl,
     hasStream: false, // disable in-app play for discovered tracks in part A
+    bcTrackId: t.bcTrackId, // propagate so the wishlist button works on /discover
   }));
 
   useEffect(() => {

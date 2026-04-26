@@ -63,6 +63,12 @@ export default function HomePage() {
           Follows
         </Link>
         <Link
+          href="/wishlist"
+          className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+        >
+          Wishlist
+        </Link>
+        <Link
           href="/setup"
           className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
         >

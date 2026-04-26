@@ -3,12 +3,14 @@ import { getStoredAuth } from '../auth/store';
 import { fetchInitialCollection, paginateCollection } from '../bandcamp/fanapi';
 import { validateCookies } from '../bandcamp/auth';
 import type { BcCollectionItem, BcCollectionPage } from '../bandcamp/types';
+import { autoMatchOwnedToWishlist } from '../wishlist/store';
 
 export interface SyncResult {
   runId: number;
   itemsSynced: number;
   totalKnown: number | null;
   itemsRemoved: number;
+  wishlistAutoMarked: number;
   durationMs: number;
 }
 
@@ -194,12 +196,22 @@ export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult
       itemsRemoved = tombstoneMissing(runId);
     }
 
+    // After persisting fresh owned items, sweep the wishlist: any open row
+    // whose bc_track_id is now in tracks/collection_items has been bought.
+    let wishlistAutoMarked = 0;
+    try {
+      wishlistAutoMarked = autoMatchOwnedToWishlist().matchedCount;
+    } catch {
+      // wishlist sweep is best-effort; sync result remains successful.
+    }
+
     finishRun(runId, 'success', itemsSynced, totalKnown, null);
     return {
       runId,
       itemsSynced,
       totalKnown,
       itemsRemoved,
+      wishlistAutoMarked,
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
