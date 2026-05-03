@@ -30,6 +30,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 
+# Tauri signing keys — keep local-only, GitHub Secret is authoritative
+.tauri-keys-backup/
+
+# Tauri build output
+src-tauri/target/
+src-tauri/gen/
+
 # editor
 .vscode/
 .idea/
