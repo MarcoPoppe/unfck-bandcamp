@@ -1,4 +1,5 @@
 import type { BcItemType } from './types';
+import { decodeHtmlEntities } from './html_entities';
 
 export interface BcTrackInfo {
   bcTrackId: number;
@@ -15,9 +16,14 @@ export interface BcReleaseInfo {
   releaseTitle: string;
   artistName: string | null;
   artistUrl: string | null;
+  artistBandId: number | null;
   albumTitle: string | null;
   albumUrl: string | null;
   coverUrl: string | null;
+  /** Original release date as Bandcamp reports it. ISO 8601 string,
+   * e.g. "2024-11-21T00:00:00Z" or sometimes "01 Mar 2024 00:00:00 GMT".
+   * We persist the raw value and let the UI parse leniently. */
+  releaseDate: string | null;
   tracks: BcTrackInfo[];
 }
 
@@ -53,15 +59,7 @@ interface RawTralbumData {
   art_id?: number;
 }
 
-function htmlEntityDecode(s: string): string {
-  return s
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&');
-}
+const htmlEntityDecode = decodeHtmlEntities;
 
 const TRALBUM_DATA_ATTR_RE = /\bdata-tralbum="([^"]+)"/;
 const LEGACY_TRALBUM_RE = /(?:var|window\.)\s+TralbumData\s*=\s*(\{[\s\S]*?\});/;
@@ -192,9 +190,11 @@ export function parseReleasePage(html: string, baseUrl: string): BcReleaseInfo |
     releaseTitle,
     artistName,
     artistUrl,
+    artistBandId: current.band_id ?? null,
     albumTitle: tralbum.album_title ?? (releaseType === 'a' ? releaseTitle : null),
     albumUrl,
     coverUrl,
+    releaseDate: current.release_date ?? null,
     tracks,
   };
 }

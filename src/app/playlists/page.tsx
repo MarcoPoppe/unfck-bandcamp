@@ -11,24 +11,20 @@ export default function PlaylistsPage() {
       <main className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="text-3xl font-bold tracking-tight">Playlists</h1>
         <p className="mt-2 text-fg-secondary">
-          Setup ist noch nicht abgeschlossen.{' '}
+          Setup is not complete.{' '}
           <a className="text-accent underline" href="/setup">
-            /setup
+            Open setup
           </a>
+          .
         </p>
       </main>
     );
   }
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Playlists</h1>
-          <p className="text-fg-secondary">Eigene Set-Sammlungen, manuell zusammengestellt.</p>
-        </div>
-        <a href="/" className="text-sm text-fg-muted transition-colors hover:text-accent">
-          ← home
-        </a>
+    <main className="mx-auto max-w-3xl px-4 pb-32 pt-8">
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">Playlists</h1>
+        <p className="text-fg-secondary">Hand-curated set lists.</p>
       </header>
       <PlaylistsClient initialPlaylists={listPlaylists()} />
     </main>

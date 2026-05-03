@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import PlaylistDetailClient from './PlaylistDetailClient';
 import { getPlaylist, getPlaylistTracks } from '@/lib/library/playlists';
 import { getStoredAuth } from '@/lib/auth/store';
+import { getPlayedBcTrackIds } from '@/lib/library/plays';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,11 @@ export default async function PlaylistDetailPage({
     return (
       <main className="mx-auto max-w-5xl px-6 py-12">
         <p className="text-fg-secondary">
-          Setup nicht abgeschlossen. <a className="text-accent underline" href="/setup">/setup</a>
+          Setup is not complete.{' '}
+          <a className="text-accent underline" href="/setup">
+            Open setup
+          </a>
+          .
         </p>
       </main>
     );
@@ -25,15 +30,19 @@ export default async function PlaylistDetailPage({
   if (!Number.isInteger(playlistId)) notFound();
   const playlist = getPlaylist(playlistId);
   if (!playlist) notFound();
-  const tracks = getPlaylistTracks(playlistId);
+  const played = getPlayedBcTrackIds();
+  const tracks = getPlaylistTracks(playlistId).map((t) => ({
+    ...t,
+    hasBeenPlayed: played.has(t.bcTrackId),
+  }));
   return (
     <main className="mx-auto max-w-5xl px-4 pb-32 pt-8">
       <header className="mb-6">
         <a href="/playlists" className="text-sm text-fg-muted transition-colors hover:text-accent">
-          ← alle Playlists
+          ← All playlists
         </a>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">{playlist.name}</h1>
-        <p className="text-fg-secondary">{playlist.trackCount} Tracks</p>
+        <p className="text-fg-secondary">{playlist.trackCount} tracks</p>
       </header>
       <PlaylistDetailClient playlistId={playlistId} initialTracks={tracks} />
     </main>

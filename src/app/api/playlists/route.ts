@@ -3,7 +3,9 @@ import {
   addTrackToPlaylist,
   createPlaylist,
   deletePlaylist,
+  getAllPlaylistMemberships,
   listPlaylists,
+  listPlaylistsWithMembership,
   removeTrackFromPlaylist,
   reorderPlaylist,
 } from '@/lib/library/playlists';
@@ -15,6 +17,37 @@ export const runtime = 'nodejs';
 export async function GET(req: Request) {
   const local = assertLocalRequest(req);
   if (local) return local;
+  const url = new URL(req.url);
+  // ?as=memberships — returns the full track→playlists map for live store
+  // hydration. Compact: only tracks with at least one membership appear.
+  if (url.searchParams.get('as') === 'memberships') {
+    const map = getAllPlaylistMemberships();
+    const memberships: Record<string, { id: number; name: string }[]> = {};
+    for (const [trackId, list] of map) {
+      memberships[String(trackId)] = list;
+    }
+    return NextResponse.json(
+      { ok: true, memberships },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
+  // ?trackId=N — returns each playlist annotated with whether the track is
+  // already in it. Used by the per-row playlist dropdown to render checkbox
+  // state. Without the param, returns the plain list.
+  const trackIdRaw = url.searchParams.get('trackId');
+  if (trackIdRaw != null) {
+    const n = Number(trackIdRaw);
+    if (!Number.isInteger(n) || n <= 0) {
+      return NextResponse.json(
+        { ok: false, error: 'trackId must be a positive integer' },
+        { status: 400, headers: NO_STORE_HEADERS },
+      );
+    }
+    return NextResponse.json(
+      { ok: true, playlists: listPlaylistsWithMembership(n) },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
   return NextResponse.json(
     { ok: true, playlists: listPlaylists() },
     { headers: NO_STORE_HEADERS },
@@ -42,6 +75,12 @@ export async function POST(req: Request) {
       { status: 400, headers: NO_STORE_HEADERS },
     );
   }
+  function posInt(v: unknown): number {
+    if (typeof v !== 'number' || !Number.isInteger(v) || v <= 0) {
+      throw new Error('id must be a positive integer');
+    }
+    return v;
+  }
   try {
     if (body.action === 'create') {
       if (!body.name) throw new Error('name required');
@@ -49,25 +88,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, id }, { headers: NO_STORE_HEADERS });
     }
     if (body.action === 'add_track') {
-      if (!body.playlistId || !body.trackId) throw new Error('playlistId+trackId required');
-      const added = addTrackToPlaylist(body.playlistId, body.trackId);
+      const playlistId = posInt(body.playlistId);
+      const trackId = posInt(body.trackId);
+      const added = addTrackToPlaylist(playlistId, trackId);
       return NextResponse.json({ ok: true, added }, { headers: NO_STORE_HEADERS });
     }
     if (body.action === 'remove_track') {
-      if (!body.playlistId || !body.trackId) throw new Error('playlistId+trackId required');
-      const removed = removeTrackFromPlaylist(body.playlistId, body.trackId);
+      const playlistId = posInt(body.playlistId);
+      const trackId = posInt(body.trackId);
+      const removed = removeTrackFromPlaylist(playlistId, trackId);
       return NextResponse.json({ ok: true, removed }, { headers: NO_STORE_HEADERS });
     }
     if (body.action === 'reorder') {
-      if (!body.playlistId || !Array.isArray(body.orderedTrackIds)) {
-        throw new Error('playlistId+orderedTrackIds required');
+      const playlistId = posInt(body.playlistId);
+      if (!Array.isArray(body.orderedTrackIds)) {
+        throw new Error('orderedTrackIds required');
       }
-      reorderPlaylist(body.playlistId, body.orderedTrackIds);
+      const ordered = body.orderedTrackIds.map((v) => posInt(v));
+      reorderPlaylist(playlistId, ordered);
       return NextResponse.json({ ok: true }, { headers: NO_STORE_HEADERS });
     }
     if (body.action === 'delete') {
-      if (!body.playlistId) throw new Error('playlistId required');
-      const removed = deletePlaylist(body.playlistId);
+      const playlistId = posInt(body.playlistId);
+      const removed = deletePlaylist(playlistId);
       return NextResponse.json({ ok: true, removed }, { headers: NO_STORE_HEADERS });
     }
     throw new Error('unknown action');

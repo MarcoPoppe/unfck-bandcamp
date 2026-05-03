@@ -89,7 +89,9 @@ Siehe `.env.example`. Die wichtigsten Variablen:
 - Bandcamp-Cookies liegen **unverschluesselt** in `data/unfck.db` (Tabelle `auth`). Wer die DB-Datei hat, kann sich als du auf bandcamp.com einloggen. **Niemals `data/` oder `data/unfck.db` an andere weitergeben.** Wenn du das Tool an Freunde weitergibst, schickst du **nur das Repo / Image**, nicht deinen `data/`-Ordner. Sie machen ihren eigenen Setup-Flow mit ihren eigenen Cookies.
 - Backup-Strategie vor jedem Update: `cp data/unfck.db data/unfck.db.bak && cp -r data/audio_cache data/audio_cache.bak`. Migrations laufen automatisch beim Container-Start; wenn eine fehlschlaegt, kannst du mit dem Backup zurueck.
 - Alle nicht-public API-Routen sind **loopback-only** (Host-Header + X-Forwarded-For-Pruefung; `127.0.0.1`/`::1`/`localhost` ok, alles andere 403). Konkret: `/api/auth/validate`, `/api/auth/suggest`, `/api/auth/status`, `/api/sync/owned`, `/api/sync/tracks`, `/api/sync/discovery`, `/api/audio/stream`, `/api/follow`, `/api/wishlist`, `/api/tags`, `/api/playlists`, `/api/plays`. Lesende Endpunkte (`/api/auth/status`, `/api/auth/suggest`) sind ebenfalls geschuetzt, weil sie Identitaets- bzw. Cookie-Daten zurueckgeben. Defense-in-Depth: docker-compose bindet den Host-Port standardmaessig nur auf `127.0.0.1`.
-- Bandcamps ToS verbietet automatisierte Zugriffe auf ihre Inhalte. Self-Host fuer den eigenen Account ist im legalen Graubereich, aber Bandcamp hat das Recht, deinen Account zu sperren wenn sie dich erwischen. **Nutzung auf eigene Verantwortung.**
+- Bandcamps ToS (Acceptable Use Policy) verbietet automatisierte Zugriffe explizit. **Öffentlich dokumentierte Account-Bans wegen Scraping gibt es Stand 04/2026 nicht** — die jüngste Banwelle 2024/2025 betraf AI-generierten Content, nicht Scraping. Bandcamp hat aber das Recht, deinen Account jederzeit zu sperren wenn sie automatisierten Zugriff bemerken.
+- **Realistisch beobachtetes Verhalten:** Cloudflare Bot Management drosselt IPs bei zu vielen Requests (etwa ab 5+/min) auf 10-30 Min temporäre Blocks. Das hast du auch ohne Sperre gegen dich. Wir machen 350ms zwischen Batches und max. 3 parallele Fetches — konservativ genug für Solo-Use.
+- **Risikoprofil:** Solo-Nutzung mit eingeloggten Cookies fällt vermutlich unter normale Heavy-User-Aktivität. Verteilung an viele User über einen gehosteten Service erhöht das Risiko deutlich (Pattern wird auffällig). **Nutzung auf eigene Verantwortung.**
 
 ### Linux-Bind-Mount Permissions
 
@@ -119,15 +121,169 @@ Albums werden erst beim Track-Expand in einzelne Tracks zerlegt. `/wishlist` mac
 **Track laesst sich nicht abspielen**
 Stream-URL-Cache veraltet (Bandcamp-Tokens sind ~30 min gueltig). Refresh laeuft automatisch beim naechsten Klick. Wenn Problem persistiert: F12 → Console → siehe Fehlermeldung von `/api/audio/stream`.
 
+## Was seit Phase 6 dazu gekommen ist (v1.7+)
+
+Die Sektionen oben beschreiben das Tool wie es zu Phase 6 stand. Hier die
+zusätzlich gebauten Features:
+
+**Discovery erweitert** — Diggers (= andere Bandcamp-User die du folgst)
+sind jetzt vollständig integriert: ihre Profile sind crawlbar
+(`/digger/[bcFanId]` und `/u/[username]`), ihre Collection wird gepullt,
+und Discovery-Sync zieht Tracks aus ihren Collections genauso wie aus
+gefolgten Artists. "Refresh discovery"-Button mit Live-Progressbar
+(polled `sync_runs` alle 1.5s).
+
+**Best of all Supporters** — auf jeder Track-Permalink-Page
+(`/track/[bcTrackId]`): crawlt alle Bandcamp-Supporter dieses Tracks
+durch ihre Recent-Collection und aggregiert "welche Items teilen sie".
+Ist quasi eine Discovery-Engine basierend darauf, was Leute mit
+demselben Geschmack noch gekauft haben.
+
+**EP-Expand** — Album-Items in jeder Liste haben einen Chevron, der die
+Tracklist inline ausklappt. EP als Ganzes spielen + A/D durchläuft alle
+Tracks. Plus Auto-Expand: wenn der Player A/D auf eine EP trifft, wird
+sie automatisch resolved und der erste Track gestartet.
+
+**Hide played + Mark unplayed** — globaler Toggle "Hide played" in jeder
+Liste blendet gehörte Tracks aus (persistiert in localStorage). Klick
+auf den grünen Haken markiert einen Track wieder als ungehört
+(WhatsApp-Style "mark as unread"). EPs gelten als "fully heard" wenn
+alle ihre Tracks gehört wurden — server-side join über
+`tracks.bc_album_id` und `tracks.album_url` mit Reconcile-Pass beim
+Page-Load (heilt legacy-NULL-Spalten in der DB).
+
+**Live-State-Sync via Player-Store** — `playedBcTrackIds` und
+`wishlistedBcTrackIds` als Sets im Zustand-Store. Wenn du im Player das
+Herz drückst, leuchtet das Heart-Icon **sofort überall** wo dieser
+Track gerendert wird. Hydration in AppShell beim ersten Mount.
+
+**Beatport-Style Player-Bar** — Cover + Title/Artist/Album links, Time-
+Block (elapsed / total / BPM-Slot), große Waveform mittig, Transport-
+Cluster rechts (Wishlist-Heart, Open-on-Bandcamp, prev, big-Play, next).
+WaveSurfer mit eigenem Audio-Element (für Browser-Autoplay-Unlock auf
+ersten User-Gesture).
+
+**Klickbarkeit überall** — Title, Artist, Label, Cover sind in jeder
+Liste `<a>`-Tags zu den entsprechenden Detail-Pages. Mittelklick öffnet
+saubere neue Tabs. Server-Side Redirect-Routes `/track/go?url=` und
+`/artist/go?url=` resolved BC-URLs zu lokalen IDs und 302'n weiter.
+
+**Like-Shortcut** — `W` (default, in `/setup` änderbar) fügt den aktuell
+laufenden Track zur Wishlist hinzu, ohne maus.
+
+**`/label/[id]`-Page** — Label-Übersicht mit Cover, Follow-Toggle und
+allen Releases gruppiert nach Album.
+
+**Discovered-Track-Source-Anzeige** — auf jedem Discover-Tab-Track
+steht "via leonlicht" / "via [Artist-Name]" je nachdem woher er kommt.
+
+**Player-Resilience** — drei Watchdogs gegen wedged Player:
+`decodingRef` Reset im track-change Effekt, AbortController-Timeouts
+(10s) für Album-Fetch und Track-Lookup, plus 30s-Watchdog auf das
+`ready`-Event von WaveSurfer mit Auto-Skip wenn nichts kommt.
+
+**Audio-Stream Re-Architecture** — Cache-First: Bei Cache-Miss wird
+synchron auf `cacheStream` gewartet (eine BC-Connection statt zwei),
+dann von Disk gestreamt. Verhindert Rate-Limit-Stalls bei BC nach
+großen Discovery-Syncs. Audio-Prefetch wurde dafür entfernt — erste
+Wiedergabe pro Track ist jetzt 2-5s langsamer, aber zweite Wiedergabe
+ist instant und der Player wedget nicht mehr.
+
+## Bereitstellung an andere Leute
+
+### Aktueller Stand
+
+- Es gibt **keinen klassischen Login-Screen**. Jeder User muss seine
+  eigenen Bandcamp-Cookies aus seinem Browser kopieren und auf
+  `/setup` einfügen (siehe Anleitung oben).
+- Es gibt **keinen Installer**. Der Empfänger braucht entweder Docker
+  oder Node.js und CLI-Erfahrung.
+- Es gibt **kein Auto-Update**. `git pull && docker compose up -d --build`
+  ist der manuelle Pfad.
+
+### Optionen für sinnvolle Distribution
+
+Sortiert nach Aufwand:
+
+#### Option A: ZIP + Anleitung (klein, ~2-3h)
+
+Empfänger kriegt:
+1. Repo-ZIP oder GitHub-Link
+2. README mit Schritt-für-Schritt-Anleitung
+3. `docker compose up -d --build` als Einzeiler
+
+Funktioniert für tech-savvy Leute. Setup-Aufwand für den Empfänger:
+~10 min wenn er Docker hat, ~30 min wenn er es zuerst installieren
+muss.
+
+#### Option B: Tauri-Wrapper als Desktop-App (mittel, ~1-2 Tage)
+
+Tauri macht aus der Next.js-App eine native Desktop-App
+(.exe / .dmg / .deb / .AppImage). Vorteile:
+
+- Single-File-Download, Doppelklick startet
+- Kein Docker, kein Node nötig auf Empfänger-Seite
+- ~5 MB Bundle (Tauri nutzt System-Webview statt eigenes Chrome)
+- Auto-Update über GitHub Releases möglich
+- Bundled SQLite + lokales Audio-Cache-Verzeichnis
+
+Was zu tun ist:
+- Tauri-Projekt initialisieren (`cargo install tauri-cli`,
+  `tauri init`)
+- Next.js auf Static-Export umstellen oder Sidecar-Server-Modus
+- Build-Pipeline für die drei OS-Targets
+- Optional: Code-Signing für Mac (Apple Developer ID, ~99€/Jahr)
+
+#### Option C: Embedded-Browser für Cookie-Login (oben drauf, ~1 Tag)
+
+Wenn schon Tauri/Electron: beim ersten Start öffnet die App ein
+Bandcamp-Login-Webview. User loggt sich normal ein, Wrapper extrahiert
+Session-Cookies direkt aus dem Webview. Kein Copy-Paste mehr.
+
+Das macht die UX wirklich freundlich — der Empfänger sieht nichts mehr
+von "Cookies kopieren", sondern bekommt einen normalen Login-Flow.
+
+#### Option D: Hosted Multi-User-Service (groß, ~2-3 Wochen)
+
+Single-User → Multi-Tenant. Erfordert:
+- Eigenes Auth-System (Login + DB pro User)
+- Server-Hosting (VPS, mind. 2 GB RAM, Disk für Audio-Caches aller User)
+- BC-Cookie-Management server-side (Encrypted, Rotation, etc.)
+- **Hohes ToS-Risiko**: BC verbietet automatisierten Zugriff. Ein
+  öffentlich gehosteter Service zieht das in den scharfen Bereich,
+  realistisch sperren sie deine IP/Account-Pool als ersten Schritt.
+
+**Nicht empfohlen** ohne starke rechtliche Klärung.
+
+### Empfehlung
+
+Wenn du das ernst meinst und an mehrere Leute verteilen willst:
+**Option B + C kombiniert** (Tauri + Embedded-Browser-Login). Das ist
+~3 Tage Arbeit für mich, danach hast du einen Installer pro OS, der
+den User ohne CLI-Wissen funktioniert.
+
+Wenn es nur 1-2 Leute mit Tech-Background sind: **Option A** reicht
+und kostet keine 3 Stunden.
+
+Sag Bescheid wenn du B+C willst — dann mache ich einen separaten Plan
+mit konkreten Steps.
+
 ## Roadmap
 
-Siehe `PLAN.md`. Phase 0-6 sind in Git-Tags `phase-0` bis `phase-6` festgehalten. Phase 6 (this) liefert Docker-Distribution + dieses README.
+Siehe `PLAN.md` und `Progress.md`. Phase 0-V sind durch.
 
-Geplant fuer kommende Phasen (nicht commitet):
-- Diggers-Discovery (BC-User mit Geschmacks-Overlap)
-- Discovery-Audio-Stream (in-app Playback fuer noch-nicht-gekaufte Tracks)
-- Custom-Domain Artist-Resolution
-- Encrypted-Cookies-At-Rest
+**Bekannte offene Punkte:**
+
+- **BPM-Detection**: einmal angefangen via `realtime-bpm-analyzer`,
+  hat den Audio-Routing-Pfad zerstört (`createMediaElementSource` darf
+  nur einmal pro Audio-Element gerufen werden). Fix-Aufwand: ~1.5h mit
+  persistentem MediaElementSource der einmal beim Mount erstellt wird.
+- **EP-Played Live-Update ohne Reload**: aktuell wird ein Album als
+  "fully heard" erst nach Page-Reload markiert (server-side join).
+  Pro Sub-Track-Play client-side checken ob alle siblings played sind.
+- **Like/Dislike-Rating** wieder einbauen, falls gewünscht.
+- **Mobile-Layout** falls jemand das wirklich braucht.
+- **Beatport-/RA-Integration** als zusätzliche Discovery-Quelle.
 
 ## Lizenz
 

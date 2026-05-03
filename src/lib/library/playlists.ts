@@ -21,6 +21,7 @@ export interface PlaylistTrack {
   durationSeconds: number | null;
   hasStream: boolean;
   bcTrackId: number;
+  hasBeenPlayed?: boolean;
 }
 
 export function listPlaylists(): PlaylistRow[] {
@@ -153,6 +154,139 @@ export function getPlaylistTracks(playlistId: number): PlaylistTrack[] {
     hasStream: r.stream_url !== null,
     bcTrackId: r.bc_track_id,
   }));
+}
+
+export interface PlaylistMembership {
+  id: number;
+  name: string;
+}
+
+export interface PlaylistWithMembership extends PlaylistRow {
+  /** True when the queried track is currently in this playlist. */
+  contains: boolean;
+}
+
+/**
+ * Like listPlaylists() but each row also carries `contains: bool` indicating
+ * whether the given local track id is already in the playlist. Used by the
+ * track-row playlist dropdown to render checkboxes the user can toggle.
+ */
+export function listPlaylistsWithMembership(trackId: number): PlaylistWithMembership[] {
+  const rows = getDb()
+    .prepare<[number], {
+      id: number;
+      name: string;
+      description: string | null;
+      track_count: number;
+      created_at: string;
+      updated_at: string;
+      contains: number;
+    }>(
+      `SELECT p.id, p.name, p.description,
+              COUNT(CASE WHEN tr.removed_at IS NULL THEN 1 END) AS track_count,
+              p.created_at, p.updated_at,
+              EXISTS (
+                SELECT 1 FROM playlist_tracks pt2
+                 WHERE pt2.playlist_id = p.id AND pt2.track_id = ?
+              ) AS contains
+         FROM playlists p
+         LEFT JOIN playlist_tracks pt ON pt.playlist_id = p.id
+         LEFT JOIN tracks tr ON tr.id = pt.track_id
+         GROUP BY p.id ORDER BY p.updated_at DESC`,
+    )
+    .all(trackId);
+  return rows.map((r) => ({
+    id: r.id,
+    name: r.name,
+    description: r.description,
+    trackCount: r.track_count,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    contains: r.contains === 1,
+  }));
+}
+
+/**
+ * For each given local track id, return the list of playlists it sits in.
+ * Returns a Map keyed by track_id; tracks with zero memberships are absent.
+ * Used to render an "in N playlists" badge on track rows.
+ */
+export function getPlaylistMembershipForTrackIds(
+  trackIds: number[],
+): Map<number, PlaylistMembership[]> {
+  const map = new Map<number, PlaylistMembership[]>();
+  if (trackIds.length === 0) return map;
+  const placeholders = trackIds.map(() => '?').join(',');
+  const rows = getDb()
+    .prepare<number[], { track_id: number; id: number; name: string }>(
+      `SELECT pt.track_id, p.id, p.name
+         FROM playlist_tracks pt
+         INNER JOIN playlists p ON p.id = pt.playlist_id
+         WHERE pt.track_id IN (${placeholders})
+         ORDER BY p.name ASC`,
+    )
+    .all(...trackIds);
+  for (const r of rows) {
+    const list = map.get(r.track_id) ?? [];
+    list.push({ id: r.id, name: r.name });
+    map.set(r.track_id, list);
+  }
+  return map;
+}
+
+/**
+ * Full membership map keyed by local tracks.id. Used by AppShell to hydrate
+ * the live store on first mount so per-row badges across the app reflect
+ * accurate state without each page refetching. Compact: only tracks with
+ * at least one playlist appear.
+ */
+export function getAllPlaylistMemberships(): Map<number, PlaylistMembership[]> {
+  const map = new Map<number, PlaylistMembership[]>();
+  const rows = getDb()
+    .prepare<[], { track_id: number; id: number; name: string }>(
+      `SELECT pt.track_id, p.id, p.name
+         FROM playlist_tracks pt
+         INNER JOIN playlists p ON p.id = pt.playlist_id
+         INNER JOIN tracks t ON t.id = pt.track_id
+         WHERE t.removed_at IS NULL
+         ORDER BY p.name ASC`,
+    )
+    .all();
+  for (const r of rows) {
+    const list = map.get(r.track_id) ?? [];
+    list.push({ id: r.id, name: r.name });
+    map.set(r.track_id, list);
+  }
+  return map;
+}
+
+/**
+ * Same lookup but keyed by bc_track_id, useful where the caller has
+ * wishlist/discover rows that may not yet have a local tracks.id resolved.
+ * Items without a matching local track row are simply absent from the map.
+ */
+export function getPlaylistMembershipForBcTrackIds(
+  bcTrackIds: number[],
+): Map<number, PlaylistMembership[]> {
+  const map = new Map<number, PlaylistMembership[]>();
+  if (bcTrackIds.length === 0) return map;
+  const placeholders = bcTrackIds.map(() => '?').join(',');
+  const rows = getDb()
+    .prepare<number[], { bc_track_id: number; id: number; name: string }>(
+      `SELECT t.bc_track_id, p.id, p.name
+         FROM tracks t
+         INNER JOIN playlist_tracks pt ON pt.track_id = t.id
+         INNER JOIN playlists p ON p.id = pt.playlist_id
+         WHERE t.bc_track_id IN (${placeholders}) AND t.removed_at IS NULL
+         ORDER BY p.name ASC`,
+    )
+    .all(...bcTrackIds);
+  for (const r of rows) {
+    const list = map.get(r.bc_track_id) ?? [];
+    list.push({ id: r.id, name: r.name });
+    map.set(r.bc_track_id, list);
+  }
+  return map;
 }
 
 export function getPlaylist(id: number): PlaylistRow | null {

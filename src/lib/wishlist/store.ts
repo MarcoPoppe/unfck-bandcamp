@@ -17,6 +17,13 @@ export interface WishlistItem {
   boughtAt: string | null;
   boughtVia: 'manual' | 'auto' | null;
   dismissedAt: string | null;
+  localTrackId: number | null;
+  hasStream: boolean;
+  hasBeenPlayed?: boolean;
+  /** Playlists this track sits in. Annotated by the page loader, not stored
+   * on the wishlist row itself. Empty array when the track is in no
+   * playlists (or hasn't been resolved into the local tracks table yet). */
+  playlists?: { id: number; name: string }[];
 }
 
 interface WishlistRow {
@@ -33,6 +40,8 @@ interface WishlistRow {
   bought_at: string | null;
   bought_via: 'manual' | 'auto' | null;
   dismissed_at: string | null;
+  local_track_id: number | null;
+  local_stream_url: string | null;
 }
 
 function fromRow(r: WishlistRow): WishlistItem {
@@ -50,6 +59,8 @@ function fromRow(r: WishlistRow): WishlistItem {
     boughtAt: r.bought_at,
     boughtVia: r.bought_via,
     dismissedAt: r.dismissed_at,
+    localTrackId: r.local_track_id,
+    hasStream: !!r.local_stream_url,
   };
 }
 
@@ -109,16 +120,27 @@ export function listWishlist(status?: WishlistStatus): WishlistItem[] {
   const rows = status
     ? db
         .prepare<[WishlistStatus], WishlistRow>(
-          `SELECT id, bc_track_id, bc_url, title, artist_name, album_title, cover_url,
-                  status, source, added_at, bought_at, bought_via, dismissed_at
-             FROM wishlist WHERE status = ? ORDER BY added_at DESC`,
+          `SELECT w.id, w.bc_track_id, w.bc_url, w.title, w.artist_name, w.album_title,
+                  w.cover_url, w.status, w.source, w.added_at, w.bought_at, w.bought_via,
+                  w.dismissed_at,
+                  t.id AS local_track_id, t.stream_url AS local_stream_url
+             FROM wishlist w
+             LEFT JOIN tracks t
+               ON t.bc_track_id = w.bc_track_id AND t.removed_at IS NULL
+            WHERE w.status = ?
+            ORDER BY w.added_at DESC`,
         )
         .all(status)
     : db
         .prepare<[], WishlistRow>(
-          `SELECT id, bc_track_id, bc_url, title, artist_name, album_title, cover_url,
-                  status, source, added_at, bought_at, bought_via, dismissed_at
-             FROM wishlist ORDER BY added_at DESC`,
+          `SELECT w.id, w.bc_track_id, w.bc_url, w.title, w.artist_name, w.album_title,
+                  w.cover_url, w.status, w.source, w.added_at, w.bought_at, w.bought_via,
+                  w.dismissed_at,
+                  t.id AS local_track_id, t.stream_url AS local_stream_url
+             FROM wishlist w
+             LEFT JOIN tracks t
+               ON t.bc_track_id = w.bc_track_id AND t.removed_at IS NULL
+            ORDER BY w.added_at DESC`,
         )
         .all();
   return rows.map(fromRow);
@@ -178,7 +200,13 @@ export function reopenItem(id: number): boolean {
   return info.changes > 0;
 }
 
-export function autoMatchOwnedToWishlist(): {
+// Mark wishlist items as bought when their bc_track_id appears in
+// collection_items — i.e. the user actually purchased them on Bandcamp.
+// Important: we match ONLY against collection_items, never against `tracks`.
+// `tracks` contains every track the app has ever resolved (lookup, player,
+// EP-expand, discovery), so matching there would mark wishlist items as
+// bought just because the user listened to them once.
+export function autoMarkBoughtFromCollection(): {
   matchedCount: number;
   matched: { id: number; title: string }[];
 } {
@@ -187,11 +215,10 @@ export function autoMatchOwnedToWishlist(): {
     .prepare<[], { id: number; title: string }>(
       `SELECT w.id, w.title FROM wishlist w
          WHERE w.status = 'open'
-           AND (
-             EXISTS (SELECT 1 FROM tracks t
-                     WHERE t.bc_track_id = w.bc_track_id AND t.removed_at IS NULL)
-             OR EXISTS (SELECT 1 FROM collection_items ci
-                     WHERE ci.bc_item_id = w.bc_track_id AND ci.removed_at IS NULL)
+           AND EXISTS (
+             SELECT 1 FROM collection_items ci
+              WHERE ci.bc_item_id = w.bc_track_id
+                AND ci.removed_at IS NULL
            )`,
     )
     .all();
@@ -200,9 +227,6 @@ export function autoMatchOwnedToWishlist(): {
     `UPDATE wishlist SET status = 'bought', bought_at = datetime('now'), bought_via = 'auto'
        WHERE id = ? AND status = 'open'`,
   );
-  // Count rows we actually mutated (Codex pass-1 B3): if a parallel sweep
-  // already marked the same row, our UPDATE is a no-op and shouldn't be
-  // reported as freshly matched.
   const matched: { id: number; title: string }[] = [];
   const tx = db.transaction(() => {
     for (const r of candidates) {

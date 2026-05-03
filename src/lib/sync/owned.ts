@@ -1,9 +1,10 @@
 import { getDb } from '../db';
-import { getStoredAuth } from '../auth/store';
+import { getCrawlTargetUsername, getStoredAuth } from '../auth/store';
 import { fetchInitialCollection, paginateCollection } from '../bandcamp/fanapi';
 import { validateCookies } from '../bandcamp/auth';
 import type { BcCollectionItem, BcCollectionPage } from '../bandcamp/types';
-import { autoMatchOwnedToWishlist } from '../wishlist/store';
+import { autoMarkBoughtFromCollection } from '../wishlist/store';
+import { recordSyncError } from './errors_store';
 
 export interface SyncResult {
   runId: number;
@@ -65,9 +66,15 @@ function persistItems(items: BcCollectionItem[], runId: number): void {
  * Mark stale `running` rows from earlier crashes as `error` so a fresh
  * sync starts from clean state and "is sync active?" guards in later
  * phases can rely on the table.
+ *
+ * Also reaps the two long-running run tables outside `sync_runs` —
+ * Codex flagged that without this they get stuck in `running` forever
+ * after a crash and the polling UI shows a spinner that never resolves.
  */
 export function reapStaleSyncRuns(): number {
-  const info = getDb()
+  const db = getDb();
+  let total = 0;
+  const info1 = db
     .prepare(
       `UPDATE sync_runs SET status = 'error',
          finished_at = datetime('now'),
@@ -75,7 +82,41 @@ export function reapStaleSyncRuns(): number {
        WHERE status = 'running'`,
     )
     .run();
-  return info.changes;
+  total += info1.changes;
+
+  // digger_crawl_runs has the same shape (status running/success/error,
+  // finished_at TEXT, error_message TEXT) — created by migration 13.
+  try {
+    const info2 = db
+      .prepare(
+        `UPDATE digger_crawl_runs SET status = 'error',
+           finished_at = datetime('now'),
+           error_message = COALESCE(error_message, 'process restarted before crawl completed')
+         WHERE status = 'running'`,
+      )
+      .run();
+    total += info2.changes;
+  } catch {
+    // Table missing on older DBs — schema_check would surface that;
+    // the reaper itself should not block startup.
+  }
+
+  // best_of_supporters_runs (migration 12).
+  try {
+    const info3 = db
+      .prepare(
+        `UPDATE best_of_supporters_runs SET status = 'error',
+           finished_at = datetime('now'),
+           error_message = COALESCE(error_message, 'process restarted before crawl completed')
+         WHERE status = 'running'`,
+      )
+      .run();
+    total += info3.changes;
+  } catch {
+    // see above
+  }
+
+  return total;
 }
 
 function startRun(kind: string): number {
@@ -138,9 +179,15 @@ function tombstoneMissing(runId: number): number {
 }
 
 /**
- * Full owned-collection sync. Re-validates the stored cookies up-front so
- * an expired session fails the sync explicitly, instead of persisting a
- * partial collection scraped from the public profile.
+ * Full owned-collection sync. Crawls the public profile of the configured
+ * crawl target via the crawler account, then paginates the collection
+ * using the target's `fan_id` (which the profile-page blob exposes) — not
+ * the cookie's own fan_id. This way a throwaway crawler account can pull
+ * a different user's public collection without ever being signed in as
+ * that user.
+ *
+ * Re-validates the crawler cookie up-front so an expired session fails
+ * the sync explicitly, instead of persisting a partial collection.
  */
 export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult> {
   const auth = getStoredAuth();
@@ -148,7 +195,7 @@ export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult
 
   // Pre-flight cookie validation: if cookies expired, fail before persisting
   // anything. The resolved fan_id+username must match what we stored to make
-  // sure the cookies still belong to the same account.
+  // sure the cookies still belong to the same crawler account.
   const reauth = await validateCookies(auth.cookieString);
   if (reauth.fanId !== auth.fanId || reauth.username !== auth.username) {
     throw new Error(
@@ -157,21 +204,32 @@ export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult
     );
   }
 
+  // Decide whose profile we're crawling: the explicit crawl target if set,
+  // otherwise the crawler's own profile (which is the natural default for
+  // single-account legacy installs and for users who use their main
+  // account as the crawler).
+  const targetUsername = getCrawlTargetUsername() ?? auth.username;
+
   const startedAt = Date.now();
   const runId = startRun('owned');
   let itemsSynced = 0;
   let totalKnown: number | null = null;
 
   try {
-    const initial = await fetchInitialCollection(auth.username, auth.cookieString);
+    const initial = await fetchInitialCollection(targetUsername, auth.cookieString);
     totalKnown = initial.collectionTotal;
     if (initial.items.length) {
       persistItems(initial.items, runId);
       itemsSynced += initial.items.length;
     }
+    // The target profile's fan_id is parsed from the public page blob;
+    // it controls which fan's collection_items the pagination endpoint
+    // enumerates. The cookie still authenticates the call (Bandcamp drops
+    // anonymous requests faster) but the data returned is the target's.
+    const targetFanId = initial.fanId ?? auth.fanId;
     if (initial.lastToken) {
       await paginateCollection({
-        fanId: auth.fanId,
+        fanId: targetFanId,
         initialLastToken: initial.lastToken,
         cookieString: auth.cookieString,
         maxItems,
@@ -196,13 +254,14 @@ export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult
       itemsRemoved = tombstoneMissing(runId);
     }
 
-    // After persisting fresh owned items, sweep the wishlist: any open row
-    // whose bc_track_id is now in tracks/collection_items has been bought.
+    // Match wishlist items against the freshly-synced collection_items.
+    // Only collection_items count as "actually bought" — never `tracks`,
+    // which contains lookup-only rows the user merely listened to.
     let wishlistAutoMarked = 0;
     try {
-      wishlistAutoMarked = autoMatchOwnedToWishlist().matchedCount;
+      wishlistAutoMarked = autoMarkBoughtFromCollection().matchedCount;
     } catch {
-      // wishlist sweep is best-effort; sync result remains successful.
+      // best-effort; sync remains successful even if the sweep throws.
     }
 
     finishRun(runId, 'success', itemsSynced, totalKnown, null);
@@ -215,13 +274,14 @@ export async function syncOwnedCollection(maxItems?: number): Promise<SyncResult
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
-    finishRun(
+    const message = err instanceof Error ? err.message : String(err);
+    finishRun(runId, 'error', itemsSynced, totalKnown, message);
+    recordSyncError({
+      kind: 'owned',
       runId,
-      'error',
-      itemsSynced,
-      totalKnown,
-      err instanceof Error ? err.message : String(err),
-    );
+      itemTitle: targetUsername,
+      message,
+    });
     throw err;
   }
 }

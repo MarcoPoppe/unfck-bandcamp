@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <style>
+    /* Tinted parallelogram swaps with the OS theme so the favicon stays
+       readable in both light and dark browser chromes. Chrome and Firefox
+       respect this; Safari falls back to the dark fill. */
+    .surface { fill: #0a0a0b; }
+    .mark { fill: #1da0c3; }
+    @media (prefers-color-scheme: light) {
+      .surface { fill: #ffffff; }
+      .mark { fill: #157c99; }
+    }
+  </style>
+  <rect class="surface" width="32" height="32" rx="6" />
+  <polygon class="mark" points="6,9 25,9 22,23 3,23" />
+</svg>

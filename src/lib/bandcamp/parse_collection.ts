@@ -3,6 +3,14 @@ import type { BcCollectionItem, BcCollectionPage, BcItemType } from './types';
 export interface ProfileBlob {
   fanId: number | null;
   fanUsername: string | null;
+  displayName: string | null;
+  imageId: number | null;
+  imageUrl: string | null;
+  bio: string | null;
+  location: string | null;
+  websiteUrl: string | null;
+  followersCount: number | null;
+  followingBandsCount: number | null;
   itemCount: number | null;
   lastToken: string | null;
   initialItems: BcCollectionItem[];
@@ -56,7 +64,15 @@ interface RawFanData {
   fan_id?: number;
   id?: number;
   username?: string;
+  name?: string;
   trackpipe_url?: string;
+  photo?: { image_id?: number; width?: number; height?: number };
+  bio?: string | null;
+  location?: string | null;
+  website_url?: string | null;
+  followers_count?: number;
+  following_bands_count?: number;
+  following_fans_count?: number;
 }
 
 interface PagedataBlob {
@@ -126,6 +142,14 @@ export function parseProfileBlob(html: string): ProfileBlob | null {
 
   const fanId = fanData.fan_id ?? fanData.id ?? identitiesFan.id ?? null;
   const fanUsername = fanData.username ?? identitiesFan.username ?? null;
+  const displayName = fanData.name ?? null;
+  const imageId = fanData.photo?.image_id ?? null;
+  const imageUrl = imageId ? `https://f4.bcbits.com/img/${imageId}_5.jpg` : null;
+  const bio = fanData.bio ?? null;
+  const location = fanData.location ?? null;
+  const websiteUrl = fanData.website_url ?? null;
+  const followersCount = fanData.followers_count ?? null;
+  const followingBandsCount = fanData.following_bands_count ?? null;
   const itemCount = collection.item_count ?? null;
   const lastToken = collection.last_token ?? null;
 
@@ -145,7 +169,21 @@ export function parseProfileBlob(html: string): ProfileBlob | null {
     }
   }
 
-  return { fanId, fanUsername, itemCount, lastToken, initialItems };
+  return {
+    fanId,
+    fanUsername,
+    displayName,
+    imageId,
+    imageUrl,
+    bio,
+    location,
+    websiteUrl,
+    followersCount,
+    followingBandsCount,
+    itemCount,
+    lastToken,
+    initialItems,
+  };
 }
 
 const INLINE_FAN_ID_RE = /"fanId":\s*(\d+)/;

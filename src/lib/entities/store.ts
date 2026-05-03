@@ -97,6 +97,23 @@ export function upsertArtist(input: {
   return Number(info.lastInsertRowid);
 }
 
+/**
+ * Resolve a label by name only (case-insensitive). Returns the existing
+ * label id when one was previously inserted via a real URL-based add,
+ * otherwise null. Used during track expansion where the Bandcamp fan API
+ * gives us the label name but not the label URL.
+ */
+export function findLabelIdByName(name: string): number | null {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  const row = getDb()
+    .prepare<[string], { id: number }>(
+      'SELECT id FROM labels WHERE LOWER(name) = LOWER(?) LIMIT 1',
+    )
+    .get(trimmed);
+  return row ? row.id : null;
+}
+
 export function upsertLabel(input: {
   bcUrl: string;
   name: string;

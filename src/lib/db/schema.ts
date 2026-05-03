@@ -186,7 +186,7 @@ export const migrations: Migration[] = [
          )`,
       ).run();
 
-      // Polymorphic following: entity_type points at artists/labels/diggers.
+      // Polymorphic following: entity_type points at artists/labels/curators.
       // Application-level FK because SQLite cannot polymorphic-reference.
       db.prepare(
         `CREATE TABLE IF NOT EXISTS following (
@@ -333,6 +333,217 @@ export const migrations: Migration[] = [
       ).run();
       db.prepare(
         'CREATE INDEX IF NOT EXISTS idx_track_plays_played_at ON track_plays (played_at DESC)',
+      ).run();
+    },
+  },
+  {
+    id: 9,
+    name: 'phase_d_curation',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS track_curation (
+           track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+           rating INTEGER NOT NULL DEFAULT 0 CHECK (rating IN (-1, 0, 1)),
+           archived_at TEXT,
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_track_curation_archived ON track_curation (archived_at)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_track_curation_rating ON track_curation (rating)',
+      ).run();
+    },
+  },
+  {
+    id: 10,
+    name: 'phase_f_diggers',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS digger_overlap (
+           digger_id INTEGER PRIMARY KEY REFERENCES diggers(id) ON DELETE CASCADE,
+           overlap_count INTEGER NOT NULL DEFAULT 0,
+           sample_titles TEXT,
+           last_computed_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_digger_overlap_count ON digger_overlap (overlap_count DESC)',
+      ).run();
+    },
+  },
+  {
+    id: 11,
+    name: 'phase_k_digger_ignored',
+    up: (db) => {
+      db.prepare(
+        'ALTER TABLE digger_overlap ADD COLUMN ignored_at TEXT',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_digger_overlap_ignored ON digger_overlap (ignored_at)',
+      ).run();
+    },
+  },
+  {
+    id: 12,
+    name: 'phase_m_best_of_supporters',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS best_of_supporters_runs (
+           track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+           started_at TEXT NOT NULL,
+           finished_at TEXT,
+           status TEXT NOT NULL,
+           supporters_scanned INTEGER NOT NULL DEFAULT 0,
+           supporters_total INTEGER,
+           items_aggregated INTEGER NOT NULL DEFAULT 0,
+           top_items_json TEXT,
+           error_message TEXT
+         )`,
+      ).run();
+    },
+  },
+  {
+    id: 13,
+    name: 'phase_n_digger_collection',
+    up: (db) => {
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS digger_collection (
+           digger_id INTEGER NOT NULL REFERENCES diggers(id) ON DELETE CASCADE,
+           bc_item_id INTEGER NOT NULL,
+           bc_item_type TEXT NOT NULL,
+           title TEXT,
+           artist_name TEXT,
+           cover_url TEXT,
+           bc_url TEXT,
+           purchased_at TEXT,
+           PRIMARY KEY (digger_id, bc_item_id, bc_item_type)
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_digger_collection_item ON digger_collection (bc_item_id, bc_item_type)',
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS digger_crawl_runs (
+           digger_id INTEGER PRIMARY KEY REFERENCES diggers(id) ON DELETE CASCADE,
+           started_at TEXT NOT NULL,
+           finished_at TEXT,
+           status TEXT NOT NULL,
+           items_crawled INTEGER NOT NULL DEFAULT 0,
+           items_total_known INTEGER,
+           error_message TEXT
+         )`,
+      ).run();
+    },
+  },
+  {
+    id: 14,
+    name: 'phase_p_collection_position',
+    up: (db) => {
+      db.prepare(
+        'ALTER TABLE digger_collection ADD COLUMN position INTEGER',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_digger_collection_position ON digger_collection (digger_id, position)',
+      ).run();
+    },
+  },
+  {
+    id: 15,
+    name: 'phase_v_bpm',
+    up: (db) => {
+      // BPM detected client-side via realtime-bpm-analyzer during playback
+      // and persisted here once we have a stable reading. REAL because
+      // typical detector output is fractional (127.43 BPM); the UI rounds
+      // for display.
+      db.prepare('ALTER TABLE tracks ADD COLUMN bpm REAL').run();
+    },
+  },
+  {
+    id: 16,
+    name: 'phase_y_released_at',
+    up: (db) => {
+      // Original release date from Bandcamp's tralbum_details
+      // (`release_date`, ISO 8601). Used by the Active-Status badge on
+      // Artist and Label pages: an artist counts as active when their
+      // latest release is within the configurable cutoff. Stored as TEXT
+      // because BC sometimes only gives us year-month precision and we
+      // want to keep the original string rather than coerce.
+      db.prepare('ALTER TABLE tracks ADD COLUMN released_at TEXT').run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_artist_released ON tracks (artist_id, released_at)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_tracks_label_released ON tracks (label_id, released_at)',
+      ).run();
+    },
+  },
+  {
+    id: 17,
+    name: 'phase_af_auth_split',
+    up: (db) => {
+      // Replace the single-row `auth` table with role-tagged rows so each
+      // instance can hold a crawler account (used for all reads) and an
+      // optional main account (used only to mirror follow/unfollow back
+      // to bandcamp.com). Existing rows become role='main' so legacy
+      // setups keep working until the user adds a crawler.
+      db.prepare(
+        `CREATE TABLE auth_v17 (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           role TEXT NOT NULL CHECK (role IN ('crawler','main')) UNIQUE,
+           cookie_string TEXT NOT NULL,
+           fan_id INTEGER NOT NULL,
+           username TEXT NOT NULL,
+           email TEXT,
+           crawl_target_username TEXT,
+           updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      // Carry over any existing auth row as the main account. The legacy
+      // table had id=1 only; we don't need that constraint anymore.
+      db.prepare(
+        `INSERT INTO auth_v17 (role, cookie_string, fan_id, username, email, updated_at)
+           SELECT 'main', cookie_string, fan_id, username, email, updated_at
+             FROM auth`,
+      ).run();
+      db.prepare('DROP TABLE auth').run();
+      db.prepare('ALTER TABLE auth_v17 RENAME TO auth').run();
+    },
+  },
+  {
+    id: 18,
+    name: 'phase_ag_sync_errors_and_staging',
+    up: (db) => {
+      // Per-item sync errors persisted so the diagnostics endpoint can
+      // surface them long after the sync toast has been dismissed. Codex
+      // pass-2 finding: errors lived only in API responses, so the user
+      // had no way to retrieve "what went wrong yesterday".
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS sync_errors (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           run_kind TEXT NOT NULL,
+           run_id INTEGER,
+           item_url TEXT,
+           item_title TEXT,
+           error_message TEXT NOT NULL,
+           created_at TEXT NOT NULL DEFAULT (datetime('now'))
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_sync_errors_created ON sync_errors (created_at DESC)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_sync_errors_kind ON sync_errors (run_kind, created_at DESC)',
+      ).run();
+
+      // Stage-and-swap marker for digger_collection crawls. Codex pass-2:
+      // the previous implementation deleted every row before fetching, so
+      // a mid-run crash erased prior crawl data. New approach: tag freshly
+      // persisted rows with `staged_run_at`, then on success delete every
+      // row whose marker is not the current run.
+      db.prepare(
+        'ALTER TABLE digger_collection ADD COLUMN staged_run_at TEXT',
       ).run();
     },
   },

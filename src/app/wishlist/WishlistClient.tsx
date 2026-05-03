@@ -1,7 +1,18 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { Virtuoso } from 'react-virtuoso';
+import StickyPlayerBar from '@/components/StickyPlayerBar';
+import TrackActionsBar from '@/components/TrackActionsBar';
+import HidePlayedToggle from '@/components/HidePlayedToggle';
+import PlayedCheck from '@/components/PlayedCheck';
+import PlaylistMembershipBadge from '@/components/PlaylistMembershipBadge';
+import type { TrackRowData } from '@/components/TrackRow';
+import { usePlayerStore } from '@/lib/store/player';
+import { useGlobalPlaybackShortcuts, useCurationShortcuts } from '@/lib/store/hooks';
+import { usePreferences } from '@/lib/settings/preferences';
 import type { WishlistItem, WishlistStatus } from '@/lib/wishlist/store';
+import { formatDateTime } from '@/lib/util/datetime';
 
 type Tab = WishlistStatus;
 
@@ -30,6 +41,8 @@ export default function WishlistClient({
   const [message, setMessage] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
+  const setWishlistedBcTrackIds = usePlayerStore((s) => s.setWishlistedBcTrackIds);
+
   async function refresh() {
     const [openR, boughtR, dismissedR] = await Promise.all([
       fetch('/api/wishlist?status=open'),
@@ -46,6 +59,10 @@ export default function WishlistClient({
     });
     if (o.counts) setCounts(o.counts);
     setSelected(new Set());
+    // Re-hydrate the live wishlist set after any patch so hearts elsewhere
+    // (player bar, other lists) drop their fill once an item is dismissed
+    // or marked bought.
+    setWishlistedBcTrackIds((o.items ?? []).map((i) => i.bcTrackId));
   }
 
   async function patchBatch(action: 'mark_bought' | 'dismiss' | 'reopen', ids: number[]) {
@@ -60,13 +77,13 @@ export default function WishlistClient({
       });
       const json = (await res.json()) as { ok?: boolean; updated?: number; error?: string };
       if (!res.ok || !json.ok) {
-        setMessage(json.error ?? `action failed (${res.status})`);
+        setMessage(json.error ?? `Action failed (${res.status})`);
       } else {
-        setMessage(`${json.updated ?? 0} Items aktualisiert`);
+        setMessage(`${json.updated ?? 0} items updated`);
         await refresh();
       }
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'action failed');
+      setMessage(err instanceof Error ? err.message : 'Action failed');
     } finally {
       setBusy(false);
     }
@@ -76,55 +93,43 @@ export default function WishlistClient({
     setBusy(true);
     setSyncMessage(null);
     try {
-      const res1 = await fetch('/api/sync/owned', {
+      const res = await fetch('/api/sync/owned', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: '{}',
       });
-      const j1 = (await res1.json()) as {
+      const json = (await res.json()) as {
         ok?: boolean;
-        wishlistAutoMarked?: number;
-        durationMs?: number;
-        error?: string;
-      };
-      if (!res1.ok || !j1.ok) {
-        setSyncMessage(j1.error ?? `owned-sync failed (${res1.status})`);
-        return;
-      }
-      // Then expand new items into tracks and sweep the wishlist again,
-      // because album purchases only show up as track rows after expansion.
-      const res2 = await fetch('/api/sync/tracks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const j2 = (await res2.json()) as {
-        ok?: boolean;
-        wishlistAutoMarked?: number;
-        durationMs?: number;
-        error?: string;
-        itemsExpanded?: number;
+        itemsSynced?: number;
         tracksWritten?: number;
+        wishlistAutoMarked?: number;
+        durationMs?: number;
+        trackImportError?: string | null;
+        trackImportErrors?: { bcUrl: string; error: string }[];
+        error?: string;
       };
-      const sec1 = ((j1.durationMs ?? 0) / 1000).toFixed(1);
-      if (!res2.ok || !j2.ok) {
-        setSyncMessage(
-          `Owned-Sync OK (${sec1}s, ${j1.wishlistAutoMarked ?? 0} auto-marked), ` +
-            `Track-Expand fehlgeschlagen: ${j2.error ?? `HTTP ${res2.status}`}. ` +
-            `Album-Auto-Match koennte unvollstaendig sein.`,
-        );
-        await refresh();
+      if (!res.ok || !json.ok) {
+        setSyncMessage(json.error ?? `Sync failed (${res.status})`);
         return;
       }
-      const totalAuto = (j1.wishlistAutoMarked ?? 0) + (j2.wishlistAutoMarked ?? 0);
-      const sec2 = ((j2.durationMs ?? 0) / 1000).toFixed(1);
+      const seconds = ((json.durationMs ?? 0) / 1000).toFixed(1);
+      const auto = json.wishlistAutoMarked ?? 0;
+      const autoMsg = auto > 0 ? `, ${auto} wishlist item(s) marked as bought` : '';
+      const trackErr = json.trackImportError
+        ? ` (track import warning: ${json.trackImportError})`
+        : '';
+      const perItemErrs =
+        json.trackImportErrors && json.trackImportErrors.length > 0
+          ? ` — ${json.trackImportErrors.length} item(s) failed: ${json.trackImportErrors
+              .map((e) => `${e.bcUrl} (${e.error})`)
+              .join('; ')}`
+          : '';
       setSyncMessage(
-        `Owned-Sync ${sec1}s + Track-Expand ${sec2}s ` +
-          `(${j2.tracksWritten ?? 0} neue Tracks), ${totalAuto} Wishlist-Items auto-marked`,
+        `Synced ${json.itemsSynced ?? 0} items / ${json.tracksWritten ?? 0} new tracks in ${seconds}s${autoMsg}${trackErr}${perItemErrs}`,
       );
       await refresh();
     } catch (err) {
-      setSyncMessage(err instanceof Error ? err.message : 'sync failed');
+      setSyncMessage(err instanceof Error ? err.message : 'Sync failed');
     } finally {
       setBusy(false);
     }
@@ -148,6 +153,85 @@ export default function WishlistClient({
 
   const visible = items[tab];
 
+  const playerQueue = useMemo<TrackRowData[]>(() => {
+    return visible.map((i) => {
+      // Already-imported items keep their real local id; lazy items get a
+      // synthetic negative id and `needsResolve: true` so StickyPlayerBar
+      // imports them via /api/track/lookup right before playing.
+      if (i.localTrackId != null) {
+        return {
+          id: i.localTrackId,
+          title: i.title,
+          artistName: i.artistName,
+          albumTitle: i.albumTitle,
+          durationSeconds: null,
+          trackNumber: null,
+          coverUrl: i.coverUrl,
+          bcUrl: i.bcUrl,
+          hasStream: i.hasStream,
+          bcTrackId: i.bcTrackId,
+          hasBeenPlayed: i.hasBeenPlayed,
+          source: 'owned' as const,
+        };
+      }
+      return {
+        id: -i.bcTrackId,
+        title: i.title,
+        artistName: i.artistName,
+        albumTitle: i.albumTitle,
+        durationSeconds: null,
+        trackNumber: null,
+        coverUrl: i.coverUrl,
+        bcUrl: i.bcUrl,
+        hasStream: true,
+        bcTrackId: i.bcTrackId,
+        hasBeenPlayed: i.hasBeenPlayed,
+        needsResolve: true,
+        source: 'owned' as const,
+      };
+    });
+  }, [visible]);
+
+  const setQueue = usePlayerStore((s) => s.setQueue);
+  const toggle = usePlayerStore((s) => s.toggle);
+  const currentId = usePlayerStore((s) => s.currentId);
+  const isPlaying = usePlayerStore((s) => s.isPlaying);
+  const playedBcTrackIds = usePlayerStore((s) => s.playedBcTrackIds);
+  const [prefs] = usePreferences();
+  const filteredVisible = useMemo(() => {
+    if (!prefs.hidePlayed) return visible;
+    return visible.filter(
+      (i) => !(i.hasBeenPlayed || playedBcTrackIds.has(i.bcTrackId)),
+    );
+  }, [visible, prefs.hidePlayed, playedBcTrackIds]);
+  const hiddenWishlistCount = visible.length - filteredVisible.length;
+  useGlobalPlaybackShortcuts();
+  useCurationShortcuts();
+
+  useEffect(() => {
+    setQueue(playerQueue);
+  }, [playerQueue, setQueue]);
+
+
+  async function refreshWishlistFromApi() {
+    const res = await fetch(`/api/wishlist?status=${tab}`);
+    if (!res.ok) return;
+    const json = (await res.json()) as { items?: WishlistItem[] };
+    setItems((prev) => ({ ...prev, [tab]: json.items ?? [] }));
+  }
+
+  function playItem(item: WishlistItem) {
+    // The queue already contains an entry for this item — either the real
+    // local track id (after import) or a synthetic id with `needsResolve`.
+    // Toggle against whichever id the queue currently holds; StickyPlayer
+    // resolves on demand if needed.
+    if (item.localTrackId != null) {
+      toggle(item.localTrackId);
+    } else {
+      toggle(-item.bcTrackId);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2 border-b border-border">
@@ -165,24 +249,25 @@ export default function WishlistClient({
                 : 'border-transparent text-fg-secondary hover:text-fg-primary'
             }`}
           >
-            {t === 'open' ? 'Offen' : t === 'bought' ? 'Gekauft' : 'Verworfen'}{' '}
+            {t === 'open' ? 'Open' : t === 'bought' ? 'Bought' : 'Dismissed'}{' '}
             <span className="ml-1 text-xs text-fg-muted">{counts[t]}</span>
           </button>
         ))}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <HidePlayedToggle count={hiddenWishlistCount} />
           <button
             type="button"
             onClick={triggerOwnedSync}
             disabled={busy}
-            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-fg-primary transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
-            {busy ? 'busy...' : 'Owned-Sync (Auto-Mark)'}
+            {busy ? 'Syncing…' : 'Sync library'}
           </button>
         </div>
       </div>
 
       {syncMessage && (
-        <div className="rounded border border-emerald-800 bg-emerald-950/40 p-3 text-sm text-emerald-200">
+        <div className="rounded border border-border-success bg-bg-success p-3 text-sm text-fg-success">
           {syncMessage}
         </div>
       )}
@@ -194,15 +279,15 @@ export default function WishlistClient({
             onClick={toggleAll}
             className="rounded border border-border bg-bg-elevated px-3 py-1 transition-colors hover:bg-bg-hover"
           >
-            {visible.every((i) => selected.has(i.id)) ? 'keine ausgewaehlt' : 'alle auswaehlen'}
+            {visible.every((i) => selected.has(i.id)) ? 'Deselect all' : 'Select all'}
           </button>
           <button
             type="button"
             onClick={() => patchBatch('mark_bought', Array.from(selected))}
             disabled={busy || selected.size === 0}
-            className="rounded bg-accent px-3 py-1 font-medium text-fg-primary transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded bg-accent px-3 py-1 font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
-            habe ich gekauft ({selected.size})
+            Mark as bought ({selected.size})
           </button>
           <button
             type="button"
@@ -210,7 +295,7 @@ export default function WishlistClient({
             disabled={busy || selected.size === 0}
             className="rounded border border-border bg-bg-elevated px-3 py-1 transition-colors hover:bg-bg-hover disabled:opacity-50"
           >
-            verwerfen
+            Dismiss
           </button>
         </div>
       )}
@@ -222,7 +307,7 @@ export default function WishlistClient({
           disabled={busy || selected.size === 0}
           className="rounded border border-border bg-bg-elevated px-3 py-1 text-sm transition-colors hover:bg-bg-hover disabled:opacity-50"
         >
-          zurueck zu Offen ({selected.size})
+          Move back to Open ({selected.size})
         </button>
       )}
 
@@ -234,22 +319,89 @@ export default function WishlistClient({
 
       <div className="space-y-2">
         {visible.length === 0 ? (
+          <div className="rounded border border-dashed border-border bg-bg-surface px-4 py-10 text-center text-sm text-fg-muted">
+            {tab === 'open' ? (
+              <>
+                <p>Your wishlist is empty.</p>
+                <p className="mt-2">
+                  Tap the heart icon on any track — in Library, in
+                  Discover, in a curator&rsquo;s collection, or even in the
+                  player bar — to drop it in here.
+                </p>
+              </>
+            ) : tab === 'bought' ? (
+              <p>
+                Nothing here yet. After your next library sync, anything you
+                actually bought on Bandcamp moves here automatically.
+              </p>
+            ) : (
+              <p>No dismissed items.</p>
+            )}
+          </div>
+        ) : filteredVisible.length === 0 ? (
           <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
-            {tab === 'open'
-              ? 'Wishlist ist leer. Tracks aus /tracks oder /discover hinzufuegen kommt in Folge-UI.'
-              : `Keine ${tab === 'bought' ? 'gekauften' : 'verworfenen'} Items.`}
+            All {visible.length} items already heard. Toggle &ldquo;Hide
+            played&rdquo; off to show them again.
           </p>
+        ) : filteredVisible.length > 200 ? (
+          <Virtuoso
+            useWindowScroll
+            totalCount={filteredVisible.length}
+            overscan={400}
+            computeItemKey={(index) => filteredVisible[index].id}
+            itemContent={(index) => {
+              const item = filteredVisible[index];
+              return (
+                <div className="pb-2">
+                  <WishlistRow
+                    item={item}
+                    selected={selected.has(item.id)}
+                    onToggle={() => toggleSelected(item.id)}
+                    isCurrent={
+                      (item.localTrackId != null && currentId === item.localTrackId) ||
+                      (item.bcTrackId != null && currentId === -item.bcTrackId)
+                    }
+                    isPlaying={
+                      ((item.localTrackId != null && currentId === item.localTrackId) ||
+                        (item.bcTrackId != null && currentId === -item.bcTrackId)) &&
+                      isPlaying
+                    }
+                    isResolving={false}
+                    onPlay={() => playItem(item)}
+                    hasBeenPlayedLive={
+                      item.bcTrackId != null && playedBcTrackIds.has(item.bcTrackId)
+                    }
+                  />
+                </div>
+              );
+            }}
+          />
         ) : (
-          visible.map((item) => (
+          filteredVisible.map((item) => (
             <WishlistRow
               key={item.id}
               item={item}
               selected={selected.has(item.id)}
               onToggle={() => toggleSelected(item.id)}
+              isCurrent={
+                (item.localTrackId != null && currentId === item.localTrackId) ||
+                (item.bcTrackId != null && currentId === -item.bcTrackId)
+              }
+              isPlaying={
+                ((item.localTrackId != null && currentId === item.localTrackId) ||
+                  (item.bcTrackId != null && currentId === -item.bcTrackId)) &&
+                isPlaying
+              }
+              isResolving={false}
+              onPlay={() => playItem(item)}
+              hasBeenPlayedLive={
+                item.bcTrackId != null && playedBcTrackIds.has(item.bcTrackId)
+              }
             />
           ))
         )}
       </div>
+      <StickyPlayerBar />
     </div>
   );
 }
@@ -258,39 +410,134 @@ interface RowProps {
   item: WishlistItem;
   selected: boolean;
   onToggle: () => void;
+  isCurrent: boolean;
+  isPlaying: boolean;
+  isResolving: boolean;
+  onPlay: () => void;
+  hasBeenPlayedLive: boolean;
 }
 
-function WishlistRow({ item, selected, onToggle }: RowProps) {
+function WishlistRow({
+  item,
+  selected,
+  onToggle,
+  isCurrent,
+  isPlaying,
+  hasBeenPlayedLive,
+  isResolving,
+  onPlay,
+}: RowProps) {
+  const needsResolve = item.localTrackId == null;
+  const playable = !isResolving;
   return (
     <div
       className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
-        selected ? 'border-accent bg-bg-elevated' : 'border-border bg-bg-surface'
+        selected
+          ? 'border-accent bg-bg-elevated'
+          : isCurrent
+            ? 'border-accent/40 bg-bg-elevated'
+            : 'border-border bg-bg-surface'
       }`}
     >
       <input
         type="checkbox"
         checked={selected}
         onChange={onToggle}
-        className="h-4 w-4 cursor-pointer"
+        className="h-4 w-4 flex-none cursor-pointer"
+        aria-label="Select item"
       />
-      {item.coverUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.coverUrl} alt="" className="h-12 w-12 flex-none rounded object-cover" />
-      ) : (
-        <div className="h-12 w-12 flex-none rounded bg-bg-elevated" />
-      )}
+      <button
+        type="button"
+        onClick={onPlay}
+        disabled={!playable}
+        title={
+          isResolving
+            ? 'Looking up track on Bandcamp…'
+            : needsResolve
+              ? 'Click to import from Bandcamp and play'
+              : isPlaying
+                ? 'Pause'
+                : 'Play'
+        }
+        aria-label={isPlaying ? 'Pause' : 'Play'}
+        className={`flex h-9 w-9 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+          isCurrent
+            ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
+            : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
+        }`}
+      >
+        {isResolving ? (
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            className="animate-spin"
+          >
+            <path d="M21 12a9 9 0 1 1-6.2-8.6" strokeLinecap="round" />
+          </svg>
+        ) : isPlaying ? (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+          </svg>
+        ) : (
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M8 5v14l11-7z" />
+          </svg>
+        )}
+      </button>
+      <a
+        href={`/track/${item.bcTrackId}`}
+        className="flex-none"
+        title="Open track page (middle-click for new tab)"
+      >
+        {item.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={item.coverUrl} alt="" className="h-12 w-12 rounded object-cover" />
+        ) : (
+          <div className="h-12 w-12 rounded bg-bg-elevated" />
+        )}
+      </a>
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{item.title}</div>
+        <div className="flex items-center gap-2">
+          <a
+            href={`/track/${item.bcTrackId}`}
+            className="flex items-center gap-2 truncate font-medium hover:underline"
+            title="Open track page"
+          >
+            {(item.hasBeenPlayed || hasBeenPlayedLive) && (
+              <PlayedCheck trackId={item.localTrackId} bcTrackId={item.bcTrackId} />
+            )}
+            <span className="truncate">{item.title}</span>
+          </a>
+          <PlaylistMembershipBadge
+            trackId={item.localTrackId}
+            playlists={item.playlists}
+          />
+        </div>
         <div className="truncate text-xs text-fg-secondary">
           {item.artistName ?? 'unknown'}
           {item.albumTitle ? ` · ${item.albumTitle}` : ''}
         </div>
         {item.status === 'bought' && (
-          <div className="mt-1 text-xs text-emerald-300">
-            gekauft {item.boughtAt} · via {item.boughtVia ?? 'manual'}
+          <div className="mt-1 text-xs text-fg-success">
+            Bought {formatDateTime(item.boughtAt)} · via {item.boughtVia ?? 'manual'}
           </div>
         )}
       </div>
+      <TrackActionsBar
+        bcUrl={item.bcUrl}
+        bcTrackId={item.bcTrackId}
+        localTrackId={item.localTrackId}
+        title={item.title}
+        artistName={item.artistName}
+        albumTitle={item.albumTitle}
+        coverUrl={item.coverUrl}
+        showFollow
+        showArchive
+      />
       <a
         href={item.bcUrl}
         target="_blank"

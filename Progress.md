@@ -1,172 +1,170 @@
 # Unfck Bandcamp
 
-**Version:** 0.7.0 (siehe `package.json`)
-**Status:** MVP komplett. Alle 7 Phasen done, ready zum Verteilen.
+**Version:** 1.44.0 (siehe `package.json`)
+**Status:** Phase AH durch (Auth-Split, Diggers→Curators-Rename, Multi-Select + Soft-Dismiss-Pattern, Codex-HIGH-Findings, Tooltip-Refactor mit Portal, Avatar-aus-BC, Custom-Error-Page, Release-Date-Fixes Option 1+2). Stabil. Zwei größere Pläne offen: TrackRow-Unification und Tauri-Distribution.
 **Repo:** lokal unter `C:\Users\marco\Claude\unfck_bandcamp\` (kein Remote)
-**Zielplattform:** Self-Host via Docker Compose (Marco + Freundeskreis), oder lokal via `npm run dev`
+**Zielplattform:** Self-Host via Docker Compose (Marco + Freundeskreis), oder lokal via `npm run dev` auf Port 3457. Tauri-Distribution geplant in nächster Session.
 
 ## Stack
 
 - Next.js 16.2.4 (App Router) + TypeScript strict + Tailwind 3
 - better-sqlite3 12.9.0 (WAL mode, IMMEDIATE-Tx, instrumentation hook auto-migrates)
-- cheerio 1.0.0 (HTML parsing fuer BC pages)
-- zustand 5.0.1 (Player-Store, single source of truth)
-- wavesurfer.js 7.8.6 (Waveform im Sticky-Player)
+- cheerio 1.0.0 (HTML parsing)
+- zustand 5.0.1 (Player-Store + Live-Played + Wishlist + Playlist-Membership Sets)
+- wavesurfer.js 7.8.6 (48px Waveform im Beatport-Style Sticky-Player)
+- realtime-bpm-analyzer 5.0.12 (installiert, Live-Detection rolled back; Offline-Detection via AudioContext aktiv)
+- react-virtuoso 4.18.6 (Virtualisierung Library 200+ / Curator-Collection 500+)
 - yt-dlp 2026.03.17 (sha256-pinned, im Docker-Image)
-- ffmpeg (im Docker-Image, fuer yt-dlp Audio-Format-Konvertierung)
+- ffmpeg im Docker-Image fuer yt-dlp Audio-Format-Konvertierung
 
-## Seiten / Module
+## Routen / Module
 
 | Pfad | Status | Zweck |
 |---|---|---|
-| `/` | done | Home mit Stats + Navigation |
-| `/setup` | done | Cookie-Paste, Validate, Owned-Sync trigger |
-| `/tracks` | done | Beatport-Style Track-Liste, Wavesurfer-Player, AWSD-Shortcuts, Heart-/+-Button |
-| `/discover` | done | Tracks von Followed-Artists (Discovery-Tab) |
-| `/follows` | done | Artists/Labels/Diggers folgen, Discovery-Sync triggern |
-| `/wishlist` | done | Wishlist mit Auto-Mark-as-Bought, Multi-Select-Actions |
-| `/playlists` | done | Playlist-Index mit Create/Delete |
-| `/playlists/[id]` | done | Detail mit Reorder + Track-Remove + Player |
-| `/tags` | done | Tag-Verwaltung mit Color-Picker |
-| `/history` | done | Letzte 200 Plays |
-| `/api/health` | done | Health-Check fuer Docker |
-| `/api/auth/{validate,suggest,status}` | done | Auth-Endpunkte (loopback-only) |
-| `/api/sync/{owned,tracks,discovery}` | done | Sync-Endpunkte (loopback-only) |
+| `/` | done | Home-Dashboard mit 6 Stat-Cards, Sync-Health, Recently-Played, Datum dd.mm.yyyy hh:mm |
+| `/setup` | done | 2-Step-Wizard (Burner + Your account), DiagnosticsPanel mit Copy-Button, Sync-Section mit Library + Follow-Imports |
+| `/tracks` | done | Library mit Search/Sort/Archived/Lookup, TrackRow |
+| `/discover` | done | 4 Tabs: New tracks (Multi-Select+Mark-as-played) / Follows (Multi-Select+Bulk-Unfollow) / Curators (Multi-Select+Mark-Seen+Hide-already-followed) / Lookup |
+| `/wishlist` | done | Open/Bought/Dismissed mit Multi-Select, Auto-Mark via collection_items, dd.mm.yyyy-Datum |
+| `/playlists`, `/playlists/[id]` | done | Hand-curated set lists mit Reorder-Pfeile (Migration auf TrackRow geplant) |
+| `/tags` | hidden | Route lebt, aus UI raus (Marco-Wunsch); DB+API stehen, Revival möglich |
+| `/labels`, `/label/[id]` | done | Label-Index + Label-Detail-Page mit Releases gruppiert |
+| `/history` | done | Letzte 200 Plays mit dd.mm.yyyy hh:mm-Datum |
+| `/track/[bcTrackId]` | done | Track-Permalink mit on-demand released_at-Refill, Custom-Error-Page bei Lookup-Fail |
+| `/artist/[bcBandId]` | done | Artist-Detail mit Library-Owned + BC-Releases inline-aufklappbar |
+| `/digger/[bcFanId]` | done | Curator-Profil (DIGGER-Badge → CURATOR), kompakt-zentrierter Header (Migration auf TrackRow geplant) |
+| `/u/[username]` | done | Anonymes BC-User-Profil |
+| `/api/health` | done | Version aus package.json + uptime |
+| `/api/diagnostics` | done | Aggregated state-snapshot mit redacted cookies |
+| `/api/auth/{validate,suggest,status,logout,avatar}` | done | role-aware (crawler/main); suggest gated by env var |
+| `/api/sync/{owned,tracks,discovery,diggers,follows}` | done | crawler-cookies durchgehend; per-item errors persisted |
 | `/api/audio/stream` | done | Range-aware Audio-Proxy + Cache |
 | `/api/{follow,wishlist,tags,playlists,plays,discover,tracks}` | done | CRUD-APIs |
+| `/api/playlists?as=memberships` | done | Live track→playlists map for AppShell hydration |
+| `/api/track/lookup`, `/api/track/[id]/{supporters,best-of,by-local/[id]/artist,bpm}` | done | Lookup, supporters, best-of crawl |
 
-## Abgeschlossene Arbeiten
+## Datenmodell (18 Migrations)
 
-### Phase 0 — Repo-Skelett (`phase-0`, commit 16b91f0)
-- Next.js 16 + TS strict + Tailwind dark + better-sqlite3 + cheerio + zustand
-- Migration-System (validate monotone unique IDs, IMMEDIATE-Tx, idempotent)
-- instrumentation hook auto-runs migrations beim Server-Start
-- Dockerfile multi-stage, non-root, ffmpeg + yt-dlp pinned
-- .dockerignore schuetzt `data/` (cookies, db) vor Build-Context
-- Health endpoint
-- Codex 2 Pass: 7 findings → fixed via instrumentation hook
+| Migration | Inhalt |
+|---|---|
+| 1-16 | (siehe vorherige Phasen-Logs) |
+| 17 | phase_af_auth_split — auth-Tabelle mit role (crawler/main) + crawl_target_username |
+| 18 | phase_ag_sync_errors_and_staging — sync_errors Tabelle, digger_collection.staged_run_at |
 
-### Phase 1 — BC-Login + Owned-Sync (`phase-1`, commit 95b9a9f)
-- DB: auth (single-row CHECK), collection_items, sync_runs
-- Cookie-Parser (identity, logout-email, js_logged_in)
-- BC homepage parser (inline JSON `fanId`+`fanUsername`)
-- Fan-API client mit Pagination + Politeness-Delay
-- Pre-flight cookie revalidation vor Sync (catch expired cookies)
-- Stale-Run-Reaper beim Server-Start
-- Tombstone-Logik (last_seen_run_id + removed_at) nur bei voll-vollstaendigem Sync
-- Loopback-Guard auf cookie-bearing endpoints
-- Codex 2 Pass: 7 findings, alle fixed/dokumentiert
-- **Verifiziert gegen echtes BC**: 36 items via Fan-API in <1.3s
+## Sicherheit
 
-### Phase 2A — Track-Expansion + Basic Player (`phase-2a`, commit 5d189ae)
-- DB Migration #4 + #5: tracks Tabelle mit purchased_at-Denormalisierung
-- BC `data-tralbum=...` HTML-Attribut Parser (BC hat Schema gewechselt)
-- Track-Expansion: 350 ms Delay, idempotent upsert mit COALESCE auf stream_url
-- Audio-Stream-Endpoint mit Range-aware Proxy + 30 min TTL + lazy-refresh
-- TrackRow + MinimalPlayer Components mit zustand store
-- Tombstone-Cascade tracks bei collection_item-removal (atomic via tx)
-- **Verifiziert**: 36 items → 44 tracks expanded, alle hasStream, MP3 4.4 MB
+- BC-Cookies AES-256-GCM verschlüsselt at rest (key in `data/.app_secret`, chmod 600)
+- 12 cookie-touching Routes loopback-guarded
+- Pre-flight cookie revalidation vor Sync
+- `/api/auth/suggest` gated by `UNFCK_ALLOW_COOKIE_SUGGEST=1` (Codex-HIGH)
+- Schema-Drift-Preflight beim App-Start (Codex-HIGH)
+- File-Logger nach `data/logs/app-YYYY-MM-DD.log` (JSON Lines)
+- Stale-Run-Reaper für sync_runs + digger_crawl_runs + best_of_supporters_runs
 
-### Phase 2B — Wavesurfer + Sticky Bar + AWSD + Audio-Cache (`phase-2b`, commit 4bee82d)
-- StickyPlayerBar mit Wavesurfer.js v7, native `<audio>` als Source-of-Truth
-- Single-Owner-Discipline: track-change-effect nur src+load, isPlaying-effect ownt play/pause
-- requestTokenRef gegen stale-rejection bei schnellem Skip
-- AWSD-Shortcuts (A/D=prev/next, Space=play/pause), gated bei input/textarea
-- Audio-Cache: data/audio_cache/track_<id>.mp3, atomic via tmp+rename, inflight-dedup, 30s failure-backoff
-- LRU-by-atime Eviction, default 2 GiB cap (env-tunable)
-- Range-Sanitization: bytes=N-M valid, bytes=N-M (descending) → 416
-- Codex 2 Pass: 5 findings, alle fixed
-- **Verifiziert**: cache-miss 6 MB MP3, cache-hit instant, range bytes=0-1023 → 1024 bytes 206
+## Abgeschlossene Phasen (Auszug seit v1.27.0)
 
-### Phase 3 — Following + Discovery (`phase-3`, commit e18dc92)
-- DB Migration #6: artists, labels, diggers, polymorphic following, discovered_tracks (separate von tracks)
-- upsertArtist match by bc_band_id first (mit > 0 guard) → custom-domain duplicates verhindert
-- BC `/<artist>/music` Parser mit Layout-Change-Detector (throw bei allen 4 Markern fehlend)
-- Discovery-Sync: bounded parallelism 3 + 350 ms cooldown zwischen Batches, limit DISCOVERY_RELEASES_PER_ARTIST=12
-- HTTP-Layer: 3-attempt retry-with-jitter auf 429/5xx
-- /follows mit Tabs + Add-by-URL, /discover mit TrackRow grid
-- Codex 2 Pass: 12 findings, 3 WARN gefixt + 9 INFO/Part-B
-- **Verifiziert**: Sender Records → 12 releases / 105 tracks / 4.6s
+### Auth-Split (Phase AF, v1.37.0)
 
-### Phase 4 — Wishlist + Cart-Stage + Auto-Mark (`phase-4`, commit c618b1c)
-- DB Migration #7: wishlist mit status (open/bought/dismissed) + bought_via (manual/auto)
-- addToWishlist dedupe by bc_track_id, re-open mit komplettem Reset
-- autoMatchOwnedToWishlist: SELECT candidates → tx-update mit changes>0 counter (concurrent safe)
-- Sync-Hooks: nach syncOwnedCollection + nach expandCollectionToTracks ruft auto-match
-- /wishlist UI 2-step-Flow (owned-sync → tracks-expand → auto-match), error-display bei step-2-failure
-- WishlistButton (Heart-Icon) im TrackRow, optimistic update
-- Loopback-Guards auf alle 3 Methoden (GET/POST/PATCH)
-- Codex 2 Pass: 14 findings, 4 high/medium fixed (loopback, error-handling, reopen-reset, changes-counter)
-- **Verifiziert**: Track 3924159572 (Whos In Control) auto-marked nach track-expand
+Migration 17. `auth`-Tabelle wurde role-tagged (crawler/main). Crawler-Account macht alle Reads, Main-Account ist optional und nur für Mirror-Follow zuständig. `getStoredAuth()` fällt auf main zurück bei Legacy-Setups. Setup-Wizard 2-step (Burner + Your account). Spec: `docs/specs/2026-05-03-auth-split-crawler-main.md`.
 
-### Phase 5 — Tags + Playlists + History (`phase-5`, commit be09f91)
-- DB Migration #8: tags (name UNIQUE), track_tags (composite PK), playlists, playlist_tracks (UNIQUE+position), track_plays
-- Tags: case-insensitive dedupe via LOWER(), trackCount JOIN durch tracks WHERE removed_at IS NULL
-- Playlists: addTrackToPlaylist atomic via IMMEDIATE-tx (kein Position-Race), reorder transactional
-- Plays: recordPlay threshold = max(1, min(5, duration*0.1)), didFire-Guard gegen StrictMode
-- TrackActions Component (+-Dropdown) im TrackRow: lazy-load tags+playlists, attach via API
-- /tags + /playlists + /playlists/[id] + /history Pages
-- next.config.js output:'standalone' fuer Phase 6 vorbereitet
-- docker-compose BIND_HOST=127.0.0.1 default
-- Codex 2 Pass: 10 findings, 6 high/medium fixed + 4 dokumentiert
+### Codex-HIGH-Findings (v1.38.0)
 
-### Phase 6 — Docker + Distribution (`phase-6`, commit d1d5fec)
-- Dockerfile auf Standalone-Layout: COPY .next/standalone + .next/static + public + node_modules/better-sqlite3
-- next.config.js outputFileTracingRoot fix fuer Windows-deeply-nested-tree
-- docker-compose env-vars passthrough: SYNC_INTERVAL_MIN, MAX_AUDIO_CACHE_BYTES, DISCOVERY_RELEASES_PER_ARTIST, YTDLP_PATH (mit defaults)
-- README komplett neu (170+ Zeilen): Voraussetzungen, Quickstart Docker+Lokal, Cookie-Anleitung, Feature-Walkthrough, Konfiguration, Architektur, Sicherheits-Hinweise, Backup, Linux-Permissions, Troubleshooting, Roadmap, Lizenz
-- LICENSE: MIT, Copyright 2026 Marco Poppe
-- Loopback-Guards finalisiert (12 cookie-touching routes)
-- Third-party-notice fuer LGPL-Transitives (sharp via next/image)
-- Codex 2 Pass: 7 MAJOR + 3 MINOR, alle fixed
+- `/api/health` returnt aus package.json (war hardcoded `0.1.0`)
+- `/api/auth/suggest` gated by env var
+- File-Logger `lib/log.ts` (JSON Lines, instrumentation hook nutzt ihn)
+- Schema-Drift-Preflight `lib/db/schema_check.ts` läuft bei jedem Boot
+- `/api/diagnostics` aggregator + `<DiagnosticsPanel>` mit Copy-Button im Setup
+- `app/error.tsx` + `app/global-error.tsx` (mit humorvollem "Ups." statt Panik)
+- File-Logger nach `data/logs/`
 
-## Datenmodell (8 Migrations)
+### Per-Item-Sync-Errors persistiert (v1.39.0)
 
-| Migration | Tabellen | Zweck |
-|---|---|---|
-| #1 | _migrations | Migration-Tracker |
-| #2 | auth, collection_items, sync_runs | Phase 1 BC-Auth + Owned-Sync |
-| #3 | (ALTER) collection_items | Phase 1.5 last_seen_run_id + removed_at fuer Tombstones |
-| #4 | tracks | Phase 2A Track-Granularitaet aus collection_items |
-| #5 | (ALTER) tracks | Phase 2A purchased_at denormalize |
-| #6 | artists, labels, diggers, following, discovered_tracks, (ALTER) tracks | Phase 3 Following + Discovery |
-| #7 | wishlist | Phase 4 Wishlist mit Auto-Mark |
-| #8 | tags, track_tags, playlists, playlist_tracks, track_plays | Phase 5 Library-Layer |
+Migration 18. `sync_errors`-Tabelle, `recordSyncError()` helper, integriert in alle 6 Sync-Module (owned, tracks, discovery, diggers, follows_import, digger_collection, best_of_supporters). `digger_collection`-Crawl auf Stage-and-Swap umgestellt (Codex-MED). Stale-Run-Reaper auf alle 3 Run-Tabellen erweitert.
 
-## Bekannte offene Punkte
+### Find Curators Source-Picker + Find-Diggers→Curators (v1.39.0 + v1.43.0)
 
-Alle aus den Codex-Reviews dokumentiert:
+Source-Dropdown: my owned releases / my open wishlist / a specific playlist. `listWishlistTralbums` + `listPlaylistTralbums` neu in `lib/sync/diggers.ts`. UI-Rename Diggers→Curators (alle UI-Strings, DB-Tabellen + Routes bleiben `digger*`).
 
-**Aufgeschoben fuer kuenftige Phasen:**
-- Diggers-Discovery (BC-User mit Geschmacks-Overlap, separater Crawler)
-- Discovery-Audio-Stream (in-app Playback fuer noch-nicht-gekaufte Tracks; Audio-Endpoint kennt aktuell nur tracks-Tabelle, nicht discovered_tracks)
-- Encrypted-Cookies-At-Rest (bisher Plain-Text in DB, OK fuer Self-Host single-tenant)
-- Custom-Domain Artist-Resolution: band_id-Match faengt 95 % ab, aber custom domains haben nicht immer band_id im HTML
+### UI-Polish-Pass (v1.40.x)
+
+- Action-Bar überall: Heart → Playlist → Follow → Archive (uniform)
+- Top-Nav: Avatar-Pill (BC-Profilbild über `/api/auth/avatar`, 6h localStorage-Cache) statt @username + Cog
+- Kontrast-Sweep: `bg-accent text-fg-primary` → `text-fg-on-accent` (18 Files, 34 Lines, fix für Light-Mode)
+- "via Curator" lesbarer (`text-fg-secondary` statt fg-muted, plus klickbarer Link wenn bcFanId bekannt)
+- Setup-Wizard "Crawler/Main" → "Burner / Your Bandcamp account", ausklappbare DevTools-Anleitung
+- Empty-States überall einladender mit Calls-to-Action
+
+### Tooltip-Component (v1.40.0+, Refactored v1.42.0)
+
+`<Tooltip>`-Komponente mit Portal + Fixed-Position, viewport-edge-clamp, auto-flip. Migriert: WishlistButton, FollowButton, AddToPlaylistButton, CurationButtons, PlayedCheck, PartialPlayedDot, HidePlayedToggle, AppShell-More+Avatar, StickyPlayerBar Player-Buttons + Time-Toggle, TrackRow Play+BC-Link.
+
+### Multi-Select + Soft-Dismiss (v1.42.0–v1.43.0)
+
+Pattern aus Diggers-Tab auf alle drei Discover-Tabs ausgerollt:
+- New tracks: Bulk "Mark as played" + "Mark seen" mit localStorage `unfck.tracks.seen.v1`
+- Curators: Bulk "Follow & mark seen" / "Mark seen" / "Permanently ignore" mit localStorage `unfck.diggers.seen.v1`, plus "Hide already-followed"-Toggle
+- Follows: Bulk-Unfollow für Artists/Labels/Curators, EntityCard mit Checkbox
+
+Tab-Counter respektiert seen + already-followed (custom-event-driven hook `useStoredSeenSet`).
+
+### Datetime-Helper + Format-Vereinheitlichung (v1.41.0)
+
+`lib/util/datetime.ts` mit `formatDateTime` (dd.mm.yyyy HH:MM) + `formatDate`. Migriert: Setup last-sync, Wishlist boughtAt, History playedAt, Home recent-syncs.
+
+### Counter-Fix + 404-Fix + Release-Date (v1.44.0)
+
+- Hide-curators-Counter zählt jetzt followed + seen (vorher nur followed)
+- `/track/[id]` zeigt eigene "Track unavailable"-Page statt 404 wenn Lookup fehlschlägt; mit BC-Fallback-Link
+- Release-Date Option 1: `listDiggerCollection` joined `tracks` per `bc_track_id`/`bc_album_id` für `released_at` + `localTrackId`
+- Release-Date Option 2: Track-Permalink macht on-demand `lookupTrack` wenn `released_at` NULL, refresht und re-rendert
+
+## Bekannte offene Punkte / Pläne in `docs/specs/`
+
+**Plan 1: TrackRow Unification** — `docs/specs/2026-05-04-trackrow-unification.md`
+- Eine `<TrackRow>` für alle Tracklisten (Library, History, Wishlist, Discover, Curator-Collection, Playlist-Detail)
+- Slot-basiert: leading (checkbox/position/reorder), trailing (album-expand/remove), expandedContent (album-tracks)
+- 5 Phasen, ~3.5h, Migrations-Plan + Test-Checkliste
+- DiggerAlbumTrackRow-Custom verschwindet; Curator-Collection + Playlist-Detail nutzen die unified component
+
+**Plan 2: Tauri Distribution + Auto-Updater** — `docs/specs/2026-05-03-tauri-distribution.md`
+- Tauri-Wrapper (Win/macOS/Linux), Embedded-Browser-Login statt Cookie-Paste
+- GitHub Releases als Distribution-Pfad mit Auto-Updater (tauri-plugin-updater)
+- 5 Phasen, ~1.5-2 Tage, GitHub Actions Release-Workflow inklusive
+- Code-Signing optional (Phase 2)
 
 **Akzeptierte Trade-offs:**
-- /history hartcap auf 200 (kein Paging) — bei DJ-Use-Case ueberfluessig
-- TrackActions Doppelklick-Race (ms-Window, idempotent serverseitig)
-- LOWER() in tag-dedupe ist ASCII-only (`Cafe` vs `Café` koennen 2 Tags werden) — niedriger Impact
-- /api/auth/suggest reicht Cookies nur an Loopback (geschuetzt) raus
-- Cache-Eviction nur LRU-by-atime, kein TTL — bei 2 GiB cap unproblematisch
+- Wellenform pro Row (Beatport-Style inline) — pro-Row WaveSurfer-Instanz wäre Performance-Killer
+- BPM Live-Detection — Offline-Detection läuft, Live rolled back wegen `createMediaElementSource`-Konflikt
+- Mobile-Layout (Desktop-only ab ~1280px)
+- Curator-URL bleibt `/digger/[id]` (DB-Tabellen heißen weiter `diggers`); Renaming wäre Migration-Overkill
 
-**Marco-Tasks vor Friend-Test:**
-- LICENSE Copyright-Jahr/Name pruefen
-- README Repo-URL setzen sobald GitHub-Repo angelegt
-- `data/bc_cookies.txt` aus Marcos lokalem Volume loeschen, sobald Setup erfolgreich (sicherheitshalber)
-- Erstbuild-Zeit auf seiner Hardware messen (5-10 min annotiert in README)
+**Offene Codex-MED-Findings (lower priority):**
+- Discovery feed-endpoint refactor für Wegwerf-Setup (aktuell iteriert über Follows)
+- Per-Item-Errors auch in den restlichen 4 Sync-Modulen — schon erledigt
+- Audio-stream Server-Errors strukturiert
+- Migration-Half-State-Schutz (Pro-Migration-Transaction)
+- Several silent catches in `lib/bandcamp/parse_release.ts` / `resolve_ids.ts`
 
-## Letzte Aenderungen (Session 2026-04-25 + 2026-04-26)
+## Test-Checkliste für Marco
 
-Vollstaendige autonome Build-Session ueber Nacht:
+1. `npm run dev` → http://localhost:3457
+2. /setup: 2-Step-Wizard durchklicken, Avatar-Pill oben rechts sichtbar
+3. /discover: alle 4 Tabs (New tracks Multi-Select, Follows Multi-Unfollow, Curators Multi-Select+Mark-Seen)
+4. /wishlist: open/bought/dismissed mit dd.mm.yyyy hh:mm
+5. /digger/[id]: Inactive-Badge mit Datum-Suffix, Album-Expand-Button "Tracks ▾"
+6. /track/[unbekannte-id]: zeigt "Track unavailable" mit BC-Fallback statt 404
+7. Tooltips: Hover auf Heart/Playlist/Follow/Archive zeigt dunkle Tooltip-Bubbles, kein Browser-Gelb mehr
+8. /api/diagnostics: JSON-Snapshot mit version 1.44.0, schema.drift []
 
-- 9 Commits, 7 Phase-Tags (`phase-0` bis `phase-6`)
-- ~80 Codex-Befunde durchgearbeitet (jeweils 2 Iterationen pro Phase)
-- Alle Sync-Pfade gegen Marcos echtes BC-Konto verifiziert (fan_id 3602423, username liebreiz)
-- Stack festgenagelt, Distribution-ready (Docker + MIT + README)
-- Version-Bump 0.1.0 → 0.7.0 fuer den 7-Phasen-Block (gemaess feedback_versionierung)
+## Stand-Log (letzte Sessions)
 
-**Naechstes Mal:**
-- Marco-Review der UI auf seinem Geraet (Browser-Test der ganzen Tool-Surface)
-- Eventuelle Friend-Test mit kleinem Freundeskreis (Repo + Cookie-Anleitung verteilen)
-- Folge-Phase fuer Diggers / Discovery-Audio / Encryption falls gewuenscht
+- 2026-04-25 bis 2026-04-29: Phase A bis W (siehe vorherige Phasen-Memo)
+- 2026-05-01: Phase X-AE (Theme-System, Tempo+BPM, Datum, Konsistenz-Sweep, Mikro-Animationen, Everything-Lookup, Datum+cross-EP-queue, Mobile-API-Discography)
+- 2026-05-03: Riesige Session — Auth-Split, UI-Polish-Pass, Tauri-Spec, Codex-Audit-Pass, Diggers→Curators Rename, Multi-Select-Pattern, Counter-Fix, Avatar-Bild aus BC, Custom-Tooltip-Portal-Refactor, Release-Date Option 1+2, Custom-Error-Page für Track-404
+- 2026-05-04: TrackRow-Unification-Plan geschrieben (für nächste Session zur Implementation)
+
+## Nächste Session
+
+Marco hat bestätigt: in der nächsten Session werden zwei Pläne umgesetzt:
+1. **TrackRow Unification** (`docs/specs/2026-05-04-trackrow-unification.md`)
+2. **Tauri Distribution + Auto-Updater** (`docs/specs/2026-05-03-tauri-distribution.md`)

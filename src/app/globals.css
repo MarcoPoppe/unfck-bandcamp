@@ -2,9 +2,75 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme tokens.
+ *
+ * Values are stored as space-separated R G B triples so Tailwind's
+ * `rgb(var(--token) / <alpha-value>)` form keeps `/40`, `/95` etc. working.
+ *
+ * `:root` carries the dark palette as the default — the app was designed
+ * Beatport-style and dark is the dominant mode. The `.light` class on
+ * <html> overrides everything for users who explicitly pick light.
+ */
 @layer base {
-  html {
+  :root {
+    /* Dark palette (default) */
+    --bg-base: 10 10 11;          /* #0a0a0b */
+    --bg-surface: 21 21 26;       /* #15151a */
+    --bg-elevated: 29 29 36;      /* #1d1d24 */
+    --bg-hover: 38 38 47;         /* #26262f */
+    --bg-danger: 26 8 8;          /* deep red wash */
+    --bg-success: 6 26 18;        /* deep emerald wash */
+    --bg-warning: 28 19 5;        /* deep amber wash */
+
+    --fg-primary: 245 245 247;    /* #f5f5f7 */
+    --fg-secondary: 168 168 179;  /* #a8a8b3 */
+    --fg-muted: 107 107 118;      /* #6b6b76 */
+    --fg-danger: 252 165 165;     /* red-300 */
+    --fg-success: 110 231 183;    /* emerald-300 */
+    --fg-warning: 252 211 77;     /* amber-300 */
+    --fg-on-accent: 245 245 247;  /* text on accent fills */
+
+    --accent: 29 160 195;          /* #1da0c3 */
+    --accent-hover: 62 185 217;    /* #3eb9d9 */
+
+    --border: 42 42 50;            /* #2a2a32 */
+    --border-strong: 58 58 68;     /* #3a3a44 */
+    --border-danger: 127 29 29;    /* red-900 */
+    --border-success: 6 95 70;     /* emerald-800 */
+    --border-warning: 146 64 14;   /* amber-800 */
+
     color-scheme: dark;
+  }
+
+  :root.light {
+    /* Light palette */
+    --bg-base: 255 255 255;        /* paper white */
+    --bg-surface: 248 248 250;     /* slight off-white panel */
+    --bg-elevated: 240 240 244;    /* card / button surface */
+    --bg-hover: 226 228 234;       /* hover wash */
+    --bg-danger: 254 242 242;      /* red-50 */
+    --bg-success: 236 253 245;     /* emerald-50 */
+    --bg-warning: 255 251 235;     /* amber-50 */
+
+    --fg-primary: 18 19 24;        /* near-black for body text */
+    --fg-secondary: 75 79 92;      /* mid-gray for secondary copy */
+    --fg-muted: 124 130 144;       /* tertiary copy */
+    --fg-danger: 153 27 27;        /* red-800 */
+    --fg-success: 6 95 70;         /* emerald-800 */
+    --fg-warning: 146 64 14;       /* amber-800 */
+    --fg-on-accent: 255 255 255;   /* white on accent fills */
+
+    --accent: 21 124 153;          /* slightly darkened for AAA on white */
+    --accent-hover: 14 102 128;
+
+    --border: 219 222 230;         /* zinc-300-ish */
+    --border-strong: 184 188 199;  /* zinc-400-ish */
+    --border-danger: 252 165 165;  /* red-300 */
+    --border-success: 110 231 183; /* emerald-300 */
+    --border-warning: 252 211 77;  /* amber-300 */
+
+    color-scheme: light;
   }
 
   body {
@@ -12,7 +78,78 @@
   }
 
   ::selection {
-    background-color: theme('colors.accent.DEFAULT');
-    color: theme('colors.fg.primary');
+    background-color: rgb(var(--accent));
+    color: rgb(var(--fg-on-accent));
+  }
+
+  /* Default focus styling: subtle ring on every interactive element. Specific
+     components can override by setting their own focus-visible:* utilities. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Buttons and links inside list rows or panels often opt out of the global
+     ring in favor of an inset variant — they just need explicit focus styles
+     declared on the element itself. */
+}
+
+/*
+ * Micro-animations for state-change feedback (heart pop, follow toggle,
+ * played check draw-on, BPM slot-machine).
+ *
+ * All gated behind `prefers-reduced-motion: no-preference` so users with the
+ * OS-level reduced-motion setting only see the static state change. Inside
+ * the gate we also re-declare the keyframes so motion-disabled UAs don't
+ * even parse them.
+ *
+ * Pure CSS, no JS animation library. Each utility class is one-shot:
+ * components add it on the firing event and remove it after the animation
+ * ends, otherwise repeated clicks would only fire on the first one because
+ * CSS keeps the animation in its end state.
+ */
+@layer utilities {
+  @media (prefers-reduced-motion: no-preference) {
+    @keyframes unfck-pop {
+      0%   { transform: scale(0.85); }
+      45%  { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    @keyframes unfck-pop-soft {
+      0%   { transform: scale(0.95); }
+      55%  { transform: scale(1.08); }
+      100% { transform: scale(1); }
+    }
+    @keyframes unfck-pop-in {
+      0%   { transform: scale(0.4); opacity: 0; }
+      60%  { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+    @keyframes unfck-ring {
+      0%   { transform: scale(0.6); opacity: 0.55; }
+      80%  { transform: scale(1.9); opacity: 0.0; }
+      100% { transform: scale(2);   opacity: 0; }
+    }
+    @keyframes unfck-stroke-draw {
+      0%   { stroke-dashoffset: 30; }
+      100% { stroke-dashoffset: 0; }
+    }
+    @keyframes unfck-roll-in {
+      0%   { transform: translateY(-12px); opacity: 0; }
+      55%  { transform: translateY(2px);   opacity: 1; }
+      100% { transform: translateY(0);     opacity: 1; }
+    }
+
+    .anim-pop          { animation: unfck-pop 280ms cubic-bezier(.34,1.56,.64,1) both; }
+    .anim-pop-soft     { animation: unfck-pop-soft 220ms ease-out both; }
+    .anim-pop-in       { animation: unfck-pop-in 240ms cubic-bezier(.34,1.56,.64,1) both; }
+    .anim-ring         { animation: unfck-ring 420ms ease-out both; }
+    .anim-stroke-draw  {
+      stroke-dasharray: 30;
+      animation: unfck-stroke-draw 260ms ease-out both;
+    }
+    .anim-roll-in      { animation: unfck-roll-in 320ms ease-out both; }
   }
 }
+

@@ -11,10 +11,11 @@ export default function TagsPage() {
       <main className="mx-auto max-w-3xl px-6 py-12">
         <h1 className="text-3xl font-bold tracking-tight">Tags</h1>
         <p className="mt-2 text-fg-secondary">
-          Setup ist noch nicht abgeschlossen.{' '}
+          Setup is not complete.{' '}
           <a className="text-accent underline" href="/setup">
-            /setup
+            Open setup
           </a>
+          .
         </p>
       </main>
     );
@@ -22,16 +23,11 @@ export default function TagsPage() {
   const tags = listTags();
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
-      <header className="mb-6 flex items-end justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Tags</h1>
-          <p className="text-fg-secondary">
-            {tags.length} Tags. Tracks bekommen Tags ueber den TagPicker in der Track-Liste.
-          </p>
-        </div>
-        <a href="/" className="text-sm text-fg-muted transition-colors hover:text-accent">
-          ← home
-        </a>
+      <header className="mb-6">
+        <h1 className="text-3xl font-bold tracking-tight">Tags</h1>
+        <p className="text-fg-secondary">
+          {tags.length} tags. Attach tags to tracks via the + button in any track row.
+        </p>
       </header>
       <TagsClient initialTags={tags} />
     </main>

@@ -6,7 +6,7 @@ import type { TagRow } from '@/lib/library/tags';
 export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
   const [tags, setTags] = useState<TagRow[]>(initialTags);
   const [name, setName] = useState('');
-  const [color, setColor] = useState('#7c5cff');
+  const [color, setColor] = useState('#1da0c3');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -29,7 +29,7 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
       });
       const json = (await res.json()) as { ok?: boolean; error?: string };
       if (!res.ok || !json.ok) {
-        setMessage(json.error ?? `create failed (${res.status})`);
+        setMessage(json.error ?? `Create failed (${res.status})`);
       } else {
         setName('');
         await refresh();
@@ -40,7 +40,7 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Tag wirklich loeschen? Alle Track-Zuweisungen gehen verloren.')) return;
+    if (!confirm('Delete this tag? All track assignments will be lost.')) return;
     const res = await fetch('/api/tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -52,13 +52,13 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-border bg-bg-surface p-4">
-        <h2 className="text-base font-semibold">Tag erstellen</h2>
+        <h2 className="text-base font-semibold">Create tag</h2>
         <div className="mt-3 flex gap-2">
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder="z.B. Sommer 26, Set XYZ"
+            placeholder="e.g. Summer 26, Set XYZ"
             className="flex-1 rounded border border-border bg-bg-base px-3 py-2 text-sm focus:border-accent focus:outline-none"
           />
           <input
@@ -66,25 +66,24 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
             value={color}
             onChange={(e) => setColor(e.target.value)}
             className="h-9 w-12 cursor-pointer rounded border border-border bg-bg-base"
+            aria-label="Tag color"
           />
           <button
             type="button"
             onClick={handleCreate}
             disabled={busy || !name.trim()}
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-primary transition-colors hover:bg-accent-hover disabled:opacity-50"
+            className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"
           >
-            anlegen
+            Create
           </button>
         </div>
-        {message && (
-          <p className="mt-3 text-sm text-red-300">{message}</p>
-        )}
+        {message && <p className="mt-3 text-sm text-fg-danger">{message}</p>}
       </section>
 
       <div className="space-y-2">
         {tags.length === 0 ? (
           <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-6 text-center text-sm text-fg-muted">
-            Noch keine Tags angelegt.
+            No tags yet.
           </p>
         ) : (
           tags.map((t) => (
@@ -97,13 +96,13 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
                 style={{ backgroundColor: t.color }}
               />
               <div className="flex-1 truncate font-medium">{t.name}</div>
-              <span className="text-sm text-fg-muted">{t.trackCount ?? 0} Tracks</span>
+              <span className="text-sm text-fg-muted">{t.trackCount ?? 0} tracks</span>
               <button
                 type="button"
                 onClick={() => handleDelete(t.id)}
-                className="rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-red-700 hover:text-red-200"
+                className="rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger"
               >
-                loeschen
+                Delete
               </button>
             </div>
           ))

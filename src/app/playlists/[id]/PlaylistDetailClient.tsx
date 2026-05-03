@@ -31,6 +31,7 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
       bcUrl: t.bcUrl,
       hasStream: t.hasStream,
       bcTrackId: t.bcTrackId,
+      hasBeenPlayed: t.hasBeenPlayed,
     }));
     setQueue(queue);
   }, [tracks, setQueue]);
@@ -77,8 +78,7 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
   if (tracks.length === 0) {
     return (
       <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
-        Noch keine Tracks. Aus /tracks Tracks ueber den + Button hinzufuegen (kommt mit
-        TagPicker UI).
+        No tracks yet. Add tracks via the + button on the Tracks page.
       </p>
     );
   }
@@ -97,6 +97,7 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
                 disabled={busy || idx === 0}
                 onClick={() => move(t.trackId, -1)}
                 className="text-xs hover:text-fg-primary disabled:opacity-20"
+                aria-label="Move up"
               >
                 ▲
               </button>
@@ -106,6 +107,7 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
                 disabled={busy || idx === tracks.length - 1}
                 onClick={() => move(t.trackId, 1)}
                 className="text-xs hover:text-fg-primary disabled:opacity-20"
+                aria-label="Move down"
               >
                 ▼
               </button>
@@ -122,15 +124,16 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
                 bcUrl: t.bcUrl,
                 hasStream: t.hasStream,
                 bcTrackId: t.bcTrackId,
+                hasBeenPlayed: t.hasBeenPlayed,
               }}
             />
             <button
               type="button"
               onClick={() => remove(t.trackId)}
               disabled={busy}
-              className="ml-auto rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-red-700 hover:text-red-200 disabled:opacity-50"
+              className="ml-auto rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger disabled:opacity-50"
             >
-              entfernen
+              Remove
             </button>
           </div>
         ))}

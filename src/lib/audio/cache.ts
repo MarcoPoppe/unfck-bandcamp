@@ -22,7 +22,7 @@ function getCacheDir(): string {
   return dir;
 }
 
-const DEFAULT_MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024; // 2 GiB
+const DEFAULT_MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
 
 function getMaxCacheBytes(): number {
   const raw = process.env.MAX_AUDIO_CACHE_BYTES;
@@ -31,12 +31,21 @@ function getMaxCacheBytes(): number {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_MAX_CACHE_BYTES;
 }
 
-export function getCachedPath(trackId: number): string {
-  return join(getCacheDir(), `track_${trackId}.mp3`);
+const KEY_RE = /^[a-zA-Z0-9_-]{1,64}$/;
+
+function sanitizeKey(key: string): string {
+  if (!KEY_RE.test(key)) {
+    throw new Error(`invalid cache key: ${key}`);
+  }
+  return key;
 }
 
-export function isCached(trackId: number): boolean {
-  return existsSync(getCachedPath(trackId));
+export function getCachedPath(cacheKey: string): string {
+  return join(getCacheDir(), `${sanitizeKey(cacheKey)}.mp3`);
+}
+
+export function isCached(cacheKey: string): boolean {
+  return existsSync(getCachedPath(cacheKey));
 }
 
 export interface CachedFileInfo {
@@ -44,25 +53,27 @@ export interface CachedFileInfo {
   size: number;
 }
 
-export function getCachedInfo(trackId: number): CachedFileInfo | null {
-  const path = getCachedPath(trackId);
+export function getCachedInfo(cacheKey: string): CachedFileInfo | null {
+  const path = getCachedPath(cacheKey);
   if (!existsSync(path)) return null;
   const stat = statSync(path);
   return { path, size: stat.size };
 }
 
-const inflight = new Map<number, Promise<void>>();
-// Negative cache: when cacheStream fails for a track, block re-attempts for
-// FAILURE_TTL_MS so a broken upstream URL or bandcamp throttling cannot
-// hammer the API on every play.
-const failedAt = new Map<number, number>();
+const inflight = new Map<string, Promise<void>>();
+const failedAt = new Map<string, number>();
 const FAILURE_TTL_MS = 30_000;
+// Cache pruning is O(n) over the cache directory; running it after every
+// single write was wasteful at thousands of files. We prune every Nth write
+// instead, which keeps the cap accurate-ish without scanning constantly.
+const PRUNE_EVERY = 25;
+let writesSincePrune = 0;
 
-function isInBackoff(trackId: number): boolean {
-  const t = failedAt.get(trackId);
+function isInBackoff(cacheKey: string): boolean {
+  const t = failedAt.get(cacheKey);
   if (!t) return false;
   if (Date.now() - t > FAILURE_TTL_MS) {
-    failedAt.delete(trackId);
+    failedAt.delete(cacheKey);
     return false;
   }
   return true;
@@ -74,12 +85,6 @@ export interface PruneResult {
   totalBytes: number;
 }
 
-/**
- * LRU-by-atime eviction. Lists every track_*.mp3 in the cache dir, sorts by
- * access time (oldest first), and unlinks files until total cache size drops
- * below MAX_AUDIO_CACHE_BYTES. Called after every successful cacheStream;
- * cheap enough for hundreds of files because readdir + stat is O(n).
- */
 export function pruneCache(): PruneResult {
   const dir = getCacheDir();
   const max = getMaxCacheBytes();
@@ -113,26 +118,21 @@ export function pruneCache(): PruneResult {
       bytesEvicted += file.size;
       evicted += 1;
     } catch {
-      // skip files we cannot delete (locked etc.)
+      // skip files we cannot delete
     }
   }
   return { evicted, bytesEvicted, totalBytes: total };
 }
 
-/**
- * Persist the bandcamp-signed stream URL to a local mp3 file. Atomic via
- * write-to-tmp + rename so a half-downloaded file is never served. Concurrent
- * calls for the same track id share a single download via the inflight map.
- * Failures populate a 30-second negative cache to prevent hammering.
- */
-export function cacheStream(trackId: number, streamUrl: string): Promise<void> {
-  if (isInBackoff(trackId)) {
+export function cacheStream(cacheKey: string, streamUrl: string): Promise<void> {
+  const key = sanitizeKey(cacheKey);
+  if (isInBackoff(key)) {
     return Promise.resolve();
   }
-  const existing = inflight.get(trackId);
+  const existing = inflight.get(key);
   if (existing) return existing;
   const promise = (async () => {
-    const dest = getCachedPath(trackId);
+    const dest = getCachedPath(key);
     if (existsSync(dest)) return;
     const tmpPath = `${dest}.tmp.${process.pid}`;
     const res = await fetch(streamUrl);
@@ -142,7 +142,11 @@ export function cacheStream(trackId: number, streamUrl: string): Promise<void> {
     try {
       await pipeline(Readable.fromWeb(res.body as never), createWriteStream(tmpPath));
       await rename(tmpPath, dest);
-      pruneCache();
+      writesSincePrune += 1;
+      if (writesSincePrune >= PRUNE_EVERY) {
+        writesSincePrune = 0;
+        pruneCache();
+      }
     } catch (err) {
       try {
         await unlink(tmpPath);
@@ -152,11 +156,11 @@ export function cacheStream(trackId: number, streamUrl: string): Promise<void> {
       throw err;
     }
   })();
-  inflight.set(trackId, promise);
+  inflight.set(key, promise);
   promise.catch(() => {
-    failedAt.set(trackId, Date.now());
+    failedAt.set(key, Date.now());
   });
-  promise.finally(() => inflight.delete(trackId));
+  promise.finally(() => inflight.delete(key));
   return promise;
 }
 
@@ -168,16 +172,11 @@ export interface RangeServeResult {
 
 const RANGE_RE = /^bytes=(\d{1,19})-(\d{1,19})?$/;
 
-/**
- * Serve a Range-requested slice of the cached file. Rejects descending ranges
- * (start > end) with 416. If Range is absent or unparsable we fall back to
- * full-file 200.
- */
 export function serveCachedFile(
-  trackId: number,
+  cacheKey: string,
   range: string | null,
 ): RangeServeResult | null {
-  const info = getCachedInfo(trackId);
+  const info = getCachedInfo(cacheKey);
   if (!info) return null;
   const { path, size } = info;
   const baseHeaders: Record<string, string> = {

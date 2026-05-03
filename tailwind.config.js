@@ -5,24 +5,37 @@ module.exports = {
   theme: {
     extend: {
       colors: {
+        // Semantic tokens are wired through CSS custom properties so that
+        // a single class change on <html> swaps the entire palette. Values
+        // for both themes live in src/app/globals.css.
         bg: {
-          base: '#0a0a0b',
-          surface: '#15151a',
-          elevated: '#1d1d24',
-          hover: '#26262f',
+          base: 'rgb(var(--bg-base) / <alpha-value>)',
+          surface: 'rgb(var(--bg-surface) / <alpha-value>)',
+          elevated: 'rgb(var(--bg-elevated) / <alpha-value>)',
+          hover: 'rgb(var(--bg-hover) / <alpha-value>)',
+          danger: 'rgb(var(--bg-danger) / <alpha-value>)',
+          success: 'rgb(var(--bg-success) / <alpha-value>)',
+          warning: 'rgb(var(--bg-warning) / <alpha-value>)',
         },
         fg: {
-          primary: '#f5f5f7',
-          secondary: '#a8a8b3',
-          muted: '#6b6b76',
+          primary: 'rgb(var(--fg-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--fg-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--fg-muted) / <alpha-value>)',
+          danger: 'rgb(var(--fg-danger) / <alpha-value>)',
+          success: 'rgb(var(--fg-success) / <alpha-value>)',
+          warning: 'rgb(var(--fg-warning) / <alpha-value>)',
+          'on-accent': 'rgb(var(--fg-on-accent) / <alpha-value>)',
         },
         accent: {
-          DEFAULT: '#7c5cff',
-          hover: '#9277ff',
+          DEFAULT: 'rgb(var(--accent) / <alpha-value>)',
+          hover: 'rgb(var(--accent-hover) / <alpha-value>)',
         },
         border: {
-          DEFAULT: '#2a2a32',
-          strong: '#3a3a44',
+          DEFAULT: 'rgb(var(--border) / <alpha-value>)',
+          strong: 'rgb(var(--border-strong) / <alpha-value>)',
+          danger: 'rgb(var(--border-danger) / <alpha-value>)',
+          success: 'rgb(var(--border-success) / <alpha-value>)',
+          warning: 'rgb(var(--border-warning) / <alpha-value>)',
         },
       },
       fontFamily: {
