@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { isTauri, signInWithBandcamp } from '@/lib/tauri/client';
 import ShortcutsEditor from '@/components/ShortcutsEditor';
 import PreferencesEditor from '@/components/PreferencesEditor';
 import DatabaseInspector from '@/components/DatabaseInspector';
@@ -52,6 +53,13 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
   const [loggingOut, setLoggingOut] = useState<Role | null>(null);
   const [syncing, setSyncing] = useState<'library' | 'follows' | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
+  // True when running inside the Tauri desktop wrapper. Embedded login
+  // and "Open data folder" buttons only render then. SSR-safe — set in
+  // useEffect, defaults false during server render.
+  const [tauriRuntime, setTauriRuntime] = useState(false);
+  useEffect(() => {
+    setTauriRuntime(isTauri());
+  }, []);
 
   // Wizard mode is shown only on a fresh install (no auth of any kind yet).
   // It walks the user through the two setup steps; the user clicks "I'm
@@ -83,11 +91,54 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
     };
   }, [crawler, main]);
 
+  /**
+   * Tauri-only path. Spawns an embedded WebView at bandcamp.com/login,
+   * waits for the user to log in, extracts the resulting session cookies,
+   * then forwards them to the same /api/auth/validate endpoint as the
+   * paste flow. Falls back gracefully to the textarea if the Tauri
+   * command fails or returns an empty cookieString — so a half-broken
+   * embedded login can't lock the user out of setup.
+   */
+  async function handleEmbeddedSignIn(role: Role) {
+    setValidating(role);
+    setMessage(null);
+    try {
+      const result = await signInWithBandcamp(role);
+      if (!result.cookieString) {
+        setMessage({
+          kind: 'error',
+          text: 'Embedded login returned no cookies — paste them manually below.',
+        });
+        return;
+      }
+      if (role === 'crawler') setCrawlerCookieInput(result.cookieString);
+      else setMainCookieInput(result.cookieString);
+      // Re-use the same validation path so the server-side handler stays
+      // single-source-of-truth.
+      await runValidate(role, result.cookieString);
+    } catch (err) {
+      setMessage({
+        kind: 'error',
+        text:
+          err instanceof Error
+            ? `Embedded sign-in failed: ${err.message}`
+            : 'Embedded sign-in failed.',
+      });
+    } finally {
+      setValidating(null);
+    }
+  }
+
   async function handleValidate(role: Role) {
     const cookieString = (role === 'crawler' ? crawlerCookieInput : mainCookieInput).trim();
     if (!cookieString) return;
     setValidating(role);
     setMessage(null);
+    await runValidate(role, cookieString);
+    setValidating(null);
+  }
+
+  async function runValidate(role: Role, cookieString: string) {
     try {
       const res = await fetch('/api/auth/validate', {
         method: 'POST',
@@ -126,8 +177,6 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
         kind: 'error',
         text: err instanceof Error ? err.message : 'unknown error',
       });
-    } finally {
-      setValidating(null);
     }
   }
 
@@ -325,6 +374,25 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
                 <li>Paste it below and click Validate.</li>
               </ol>
             </details>
+            {tauriRuntime && (
+              <div className="mt-3 rounded border border-accent/40 bg-accent/5 p-3">
+                <p className="text-sm text-fg-secondary">
+                  <strong>Easy mode:</strong> sign in with Bandcamp directly
+                  in this app — no DevTools needed.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleEmbeddedSignIn('crawler')}
+                  disabled={validating === 'crawler'}
+                  className="mt-2 rounded bg-accent px-4 py-2 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {validating === 'crawler' ? 'Signing in…' : 'Sign in with Bandcamp'}
+                </button>
+                <p className="mt-2 text-xs text-fg-muted">
+                  Or paste cookies manually below.
+                </p>
+              </div>
+            )}
             <textarea
               value={crawlerCookieInput}
               onChange={(e) => setCrawlerCookieInput(e.target.value)}
@@ -361,6 +429,26 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
               Skip this if you just want the burner&rsquo;s data — you can
               always link your account later from Setup.
             </p>
+            {tauriRuntime && (
+              <div className="mt-3 rounded border border-accent/40 bg-accent/5 p-3">
+                <p className="text-sm text-fg-secondary">
+                  <strong>Easy mode:</strong> sign in with Bandcamp directly
+                  in this app.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleEmbeddedSignIn('main')}
+                  disabled={validating === 'main'}
+                  className="mt-2 rounded bg-accent px-4 py-2 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {validating === 'main' ? 'Signing in…' : 'Sign in with Bandcamp'}
+                </button>
+                <p className="mt-2 text-xs text-fg-muted">
+                  Make sure to log in to your <strong>real</strong> account
+                  this time, not the burner.
+                </p>
+              </div>
+            )}
             <textarea
               value={mainCookieInput}
               onChange={(e) => setMainCookieInput(e.target.value)}

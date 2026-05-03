@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import UnfckBandcampLogo from './UnfckBandcampLogo';
 import Tooltip from './Tooltip';
+import UpdaterBanner from './UpdaterBanner';
 import { usePlayerStore } from '@/lib/store/player';
 
 interface NavItem {
@@ -177,6 +178,7 @@ export default function AppShell({
 
   return (
     <>
+      <UpdaterBanner />
       <header className="sticky top-0 z-40 border-b border-border bg-bg-base/95 backdrop-blur">
         <nav className="mx-auto flex max-w-7xl items-center gap-1 px-4 py-3">
           <Link

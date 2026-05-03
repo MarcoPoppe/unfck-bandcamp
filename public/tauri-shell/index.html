@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unfck Bandcamp</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0b0b0b;
+      color: #f3f3f3;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .wrap { text-align: center; }
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+    .accent { color: #ffb300; }
+    .status {
+      margin-top: 16px;
+      font-size: 13px;
+      color: #888;
+    }
+    .err {
+      margin-top: 12px;
+      font-size: 12px;
+      color: #d44;
+      max-width: 360px;
+      word-wrap: break-word;
+    }
+    .spinner {
+      margin: 24px auto 0;
+      width: 28px;
+      height: 28px;
+      border: 3px solid #222;
+      border-top-color: #ffb300;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo"><span class="accent">unfck</span> bandcamp</div>
+    <div class="spinner"></div>
+    <div class="status" id="s">Starting local server…</div>
+    <div class="err" id="e"></div>
+  </div>
+  <script>
+    // Poll the embedded sidecar until /api/health responds, then redirect
+    // the WebView to the live UI. Tauri's setup hook spawns the Next.js
+    // standalone server on this same loopback port; we don't know exactly
+    // when it has bound, so probe with a backoff. Falls back to showing
+    // an error message after ~30s so a busy port or crashed sidecar is
+    // visible instead of an infinite spinner.
+    const PORT = window.__UNFCK_PORT__ || 3457;
+    const target = `http://127.0.0.1:${PORT}/`;
+    const start = Date.now();
+
+    async function probe() {
+      try {
+        const r = await fetch(`${target}api/health`, { cache: 'no-store' });
+        if (r.ok) {
+          window.location.replace(target);
+          return;
+        }
+      } catch (_) { /* server not up yet */ }
+
+      const elapsed = Date.now() - start;
+      if (elapsed > 30000) {
+        document.getElementById('s').textContent = 'Local server did not start.';
+        document.getElementById('e').textContent =
+          'The Next.js sidecar failed to bind to port ' + PORT + '. ' +
+          'Check the Tauri log (View > Developer Tools) or run `npm run dev` ' +
+          'manually to inspect the failure.';
+        return;
+      }
+      setTimeout(probe, 500);
+    }
+
+    probe();
+  </script>
+</body>
+</html>

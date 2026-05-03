@@ -1,6 +1,6 @@
 {
   "name": "unfck-bandcamp",
-  "version": "1.45.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3457",
@@ -8,9 +8,15 @@
     "start": "next start -p 3457",
     "lint": "eslint . --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
-    "migrate": "tsx scripts/migrate.ts"
+    "migrate": "tsx scripts/migrate.ts",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-updater": "^2.10.1",
     "better-sqlite3": "12.9.0",
     "cheerio": "1.0.0",
     "next": "16.2.4",
@@ -22,6 +28,7 @@
     "zustand": "5.0.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.0",
     "@types/better-sqlite3": "7.6.13",
     "@types/node": "22.9.0",
     "@types/react": "19.0.0",

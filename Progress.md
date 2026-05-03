@@ -1,9 +1,9 @@
 # Unfck Bandcamp
 
-**Version:** 1.45.0 (siehe `package.json`)
-**Status:** Phase AI durch — TrackRow-Unification fertig. Eine Komponente für alle Tracklisten (Library, History, Wishlist, Discover, Curator-Collection, Playlist-Detail). Slot-basiert (variant=full/compact, position, reorderControls, selectable, trailing, expandedContent, badges, titleHref). DiggerAlbumTrackRow gelöscht; expanded Curator-Album-Tracks rendern als TrackRow variant=compact. TrackRow nutzt intern TrackActionsBar — Lazy-Resolve für nicht-importierte Curator-Items kommt damit kostenlos. Build clean, tsc clean. Tauri-Distribution als nächstes.
-**Repo:** lokal unter `C:\Users\marco\Claude\unfck_bandcamp\` (kein Remote)
-**Zielplattform:** Self-Host via Docker Compose (Marco + Freundeskreis), oder lokal via `npm run dev` auf Port 3457. Tauri-Distribution geplant in nächster Session.
+**Version:** 2.0.0 (siehe `package.json`) — erste installierbare Tauri-Release.
+**Status:** Phase AJ durch — Tauri-Distribution + Auto-Updater verkabelt. TrackRow-Unification (Phase AI, v1.45.0) bleibt eingerollt. Tauri-Wrapper mit Sidecar-Pattern (Rust spawnt Next.js standalone server auf 127.0.0.1:3457), Updater-Plugin auf GitHub-Releases-latest.json mit ed25519-signed manifests, GitHub Actions Release-Pipeline für Win/macOS-arm64/macOS-x86_64/Linux. Setup-Wizard zeigt "Sign in with Bandcamp"-Buttons unter Tauri (Embedded-Login Rust-Backend ist scaffolded mit Polling-Loop, Cookie-Extraction-API noch zu vervollständigen — Wizard fällt graceful auf Cookie-Paste zurück). Code-Signing übersprungen (out of scope laut Spec). Phase 5 Friend-Test übersprungen.
+**Repo:** `https://github.com/MarcoPoppe/unfck-bandcamp` (privat).
+**Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose oder `npm run dev` bleibt Option für Power-User.
 
 ## Stack
 
@@ -163,6 +163,29 @@ Tab-Counter respektiert seen + already-followed (custom-event-driven hook `useSt
 - 2026-05-03: Riesige Session — Auth-Split, UI-Polish-Pass, Tauri-Spec, Codex-Audit-Pass, Diggers→Curators Rename, Multi-Select-Pattern, Counter-Fix, Avatar-Bild aus BC, Custom-Tooltip-Portal-Refactor, Release-Date Option 1+2, Custom-Error-Page für Track-404
 - 2026-05-04: TrackRow-Unification-Plan + Tauri-Plan geschrieben
 - 2026-05-04: Sammelcommit v1.44.0 (37 Phasen seit v0.7.0). Phase AI: TrackRow-Unification durch — alle 5 Phasen, build clean. Tauri-Distribution als nächstes.
+
+## Phase AJ — Tauri Distribution + Auto-Updater (v2.0.0)
+
+5 Phasen aus `docs/specs/2026-05-03-tauri-distribution.md`:
+
+1. **Bootstrap.** `@tauri-apps/cli` installiert, `npx tauri init` mit Defaults (`com.unfck.bandcamp`, `Unfck Bandcamp`, devUrl `http://localhost:3457`). `src-tauri/tauri.conf.json` setzt `frontendDist: ../public/tauri-shell` (Splash-HTML), `bundle.resources` packt das standalone-tree mit ein. `src-tauri/src/lib.rs` spawnt im Release-Build den Sidecar-Process (`node .next/standalone/server.js`) mit `PORT=3457`, `HOSTNAME=127.0.0.1`, `DATABASE_PATH=<app_data>/data/unfck.db`. Im Debug-Build läuft `npm run dev` als `beforeDevCommand` und der Sidecar-Spawn wird übersprungen. `public/tauri-shell/index.html` zeigt einen Splash mit Spinner und polled `/api/health`, dann redirected er auf die Live-UI.
+2. **Embedded Login.** `open_bandcamp_login` Tauri-Command spawned eine `bc-login-<role>`-WebView auf bandcamp.com/login, polled die URL bis zur Post-Login-Seite und liest den Username aus dem Pfad. Cookie-Extraction-API ist plattform-spezifisch (WebView2/WKWebView/WebKitGTK) — Stub gibt aktuell leeren cookieString zurück, Setup-Wizard fällt dann graceful auf Cookie-Paste zurück. `src/lib/tauri/client.ts` mit `isTauri()` + `signInWithBandcamp(role)` als SSR-safe Wrapper. Setup-Wizard rendert "Sign in with Bandcamp"-Button conditional auf `tauriRuntime` für beide Rollen (crawler/main).
+3. **GitHub Actions Pipeline.** Updater-Keypair via `npx tauri signer generate --ci` erzeugt; Public-Key in `tauri.conf.json` eingebaut, Private-Key + Password als `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in GitHub-Secrets gepusht. `.github/workflows/release.yml` mit `tauri-action@v0`-Matrix für `windows-latest`, `macos-latest` (arm64+x86_64-cross-compile), `ubuntu-22.04`. Trigger: Push eines `v*.*.*`-Tags. Linux braucht `libwebkit2gtk-4.1-dev` + `libappindicator3-dev` + `librsvg2-dev`. Alle drei OS-Installer + `latest.json`-Manifest landen automatisch in einer GitHub Release.
+4. **Updater-Plugin.** `tauri-plugin-updater` in Cargo.toml + `tauri::Builder::plugin(...)` in `lib.rs`. `tauri.conf.json::plugins.updater` mit `endpoints` (GitHub-Releases-latest.json) + `pubkey` (ed25519). `src/components/UpdaterBanner.tsx` polled `checkForAppUpdate()` bei Mount + alle 24h, zeigt eine sticky Top-Banner mit Version + Notes + "Install + restart"-Button. `applyAppUpdate` ruft `downloadAndInstall` + `relaunch`. Banner ist im AppShell vor `<header>` gemountet, rendert nichts wenn nicht-Tauri oder kein Update.
+5. **Friend-Test.** Out of scope laut Spec, übersprungen — geht erst nach erstem CI-Build mit echtem Installer.
+
+**Capabilities:** `src-tauri/capabilities/default.json` erweitert um `core:webview:allow-create-webview-window`, `updater:default` + `allow-check`/`allow-download`/`allow-install`/`allow-download-and-install`. Window-Pattern `bc-login-*` whitelisted für die Login-WebView.
+
+**Build-Status:**
+- `tsc --noEmit` clean.
+- `next build` clean.
+- `cargo build` lokal nicht möglich: VS BuildTools 2022 ist auf Marcos Rechner installiert, **aber das C++ Workload (cl.exe, link.exe, MSVCRT) fehlt**. `vs_installer.exe modify --add Microsoft.VisualStudio.Workload.VCTools` lief silent durch ohne UAC-Prompt → Workload nicht installiert. Marco muss das mit Admin-Rechten nachholen für lokalen Tauri-Build. Remote-Build via GitHub Actions ist davon nicht betroffen — die Runner haben ihre Toolchain.
+- **Validation läuft beim ersten Tag-Push via GitHub Actions.**
+
+**Bekannte offene Punkte:**
+- Embedded-Login Cookie-Extraction (Tauri-2-API stabil ist plattform-spezifisch). Wizard fällt graceful auf Cookie-Paste zurück.
+- Code-Signing nicht aktiv: SmartScreen (Win) + Gatekeeper (macOS) zeigen Warnings. Phase 2 im Spec, übersprungen.
+- Friend-Test (frische VM, fremde Hardware) nicht durchgeführt.
 
 ## Phase AI — TrackRow Unification (v1.45.0)
 
