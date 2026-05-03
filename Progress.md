@@ -1,7 +1,7 @@
 # Unfck Bandcamp
 
-**Version:** 1.44.0 (siehe `package.json`)
-**Status:** Phase AH durch (Auth-Split, Diggers→Curators-Rename, Multi-Select + Soft-Dismiss-Pattern, Codex-HIGH-Findings, Tooltip-Refactor mit Portal, Avatar-aus-BC, Custom-Error-Page, Release-Date-Fixes Option 1+2). Stabil. Zwei größere Pläne offen: TrackRow-Unification und Tauri-Distribution.
+**Version:** 1.45.0 (siehe `package.json`)
+**Status:** Phase AI durch — TrackRow-Unification fertig. Eine Komponente für alle Tracklisten (Library, History, Wishlist, Discover, Curator-Collection, Playlist-Detail). Slot-basiert (variant=full/compact, position, reorderControls, selectable, trailing, expandedContent, badges, titleHref). DiggerAlbumTrackRow gelöscht; expanded Curator-Album-Tracks rendern als TrackRow variant=compact. TrackRow nutzt intern TrackActionsBar — Lazy-Resolve für nicht-importierte Curator-Items kommt damit kostenlos. Build clean, tsc clean. Tauri-Distribution als nächstes.
 **Repo:** lokal unter `C:\Users\marco\Claude\unfck_bandcamp\` (kein Remote)
 **Zielplattform:** Self-Host via Docker Compose (Marco + Freundeskreis), oder lokal via `npm run dev` auf Port 3457. Tauri-Distribution geplant in nächster Session.
 
@@ -161,10 +161,17 @@ Tab-Counter respektiert seen + already-followed (custom-event-driven hook `useSt
 - 2026-04-25 bis 2026-04-29: Phase A bis W (siehe vorherige Phasen-Memo)
 - 2026-05-01: Phase X-AE (Theme-System, Tempo+BPM, Datum, Konsistenz-Sweep, Mikro-Animationen, Everything-Lookup, Datum+cross-EP-queue, Mobile-API-Discography)
 - 2026-05-03: Riesige Session — Auth-Split, UI-Polish-Pass, Tauri-Spec, Codex-Audit-Pass, Diggers→Curators Rename, Multi-Select-Pattern, Counter-Fix, Avatar-Bild aus BC, Custom-Tooltip-Portal-Refactor, Release-Date Option 1+2, Custom-Error-Page für Track-404
-- 2026-05-04: TrackRow-Unification-Plan geschrieben (für nächste Session zur Implementation)
+- 2026-05-04: TrackRow-Unification-Plan + Tauri-Plan geschrieben
+- 2026-05-04: Sammelcommit v1.44.0 (37 Phasen seit v0.7.0). Phase AI: TrackRow-Unification durch — alle 5 Phasen, build clean. Tauri-Distribution als nächstes.
 
-## Nächste Session
+## Phase AI — TrackRow Unification (v1.45.0)
 
-Marco hat bestätigt: in der nächsten Session werden zwei Pläne umgesetzt:
-1. **TrackRow Unification** (`docs/specs/2026-05-04-trackrow-unification.md`)
-2. **Tauri Distribution + Auto-Updater** (`docs/specs/2026-05-03-tauri-distribution.md`)
+5 Phasen aus `docs/specs/2026-05-04-trackrow-unification.md`:
+
+1. **API erweitert.** TrackRow.tsx nimmt jetzt `variant`, `position`, `reorderControls`, `selectable`, `trailing`, `expandedContent`, `titleHref`, `badges`, `showFollow/Archive/BcLink`, `hideAlbumColumn/Duration`, `partialPlayedFraction` an. Defaults so gewählt, dass alle 8 bestehenden Aufrufer unverändert kompilieren. Inline action-buttons durch `<TrackActionsBar>` ersetzt — damit kommt Lazy-Resolve für nicht-importierte Curator-Items kostenlos.
+2. **Curator-Track-Items.** `DiggerDetailClient.renderCollectionItem` rendert track-items als `<TrackRow titleHref="/track/go?url=…" badges="You own this" showFollow showArchive hideAlbumColumn hideDuration onPlayOverride={...} />`.
+3. **Curator-Album-Items + DiggerAlbumTrackRow gelöscht.** Album-items rendern als TrackRow mit `trailing={AlbumExpandToggle}` und `expandedContent={AlbumTracklist}`. Inline tracklist nutzt neue `AlbumTrackCompactRow`-Wrapper, der TrackRow mit `variant="compact" position={t.trackNumber}` rendert. Code-Reduktion: ~150 LOC.
+4. **Playlist-Detail.** PlaylistDetailClient nutzt TrackRow mit `position`, `reorderControls`, `trailing={Remove}`, `hideDuration`. Custom Reorder-Wrapper raus.
+5. **Discover-Tracks-Tab.** TracksTab nutzt `selectable={{selected, onToggle, label}}` statt Wrapper-Flex mit eigener Checkbox.
+
+**Build-Status:** `tsc --noEmit` clean. `next build` clean (alle Routen kompilieren). ESLint-Config fehlt im Repo (Pre-existing, nicht durch diese Session verursacht).

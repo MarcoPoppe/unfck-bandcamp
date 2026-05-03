@@ -4,10 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Virtuoso } from 'react-virtuoso';
 import StickyPlayerBar from '@/components/StickyPlayerBar';
-import TrackActionsBar from '@/components/TrackActionsBar';
+import TrackRow from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
-import PlayedCheck from '@/components/PlayedCheck';
-import PartialPlayedDot from '@/components/PartialPlayedDot';
 import ActiveBadge from '@/components/ActiveBadge';
 import type { ActivitySnapshot } from '@/lib/library/activity';
 import { usePreferences } from '@/lib/settings/preferences';
@@ -15,7 +13,7 @@ import type { DiggerDetail } from '@/lib/sync/diggers';
 import { loadPreferences } from '@/lib/settings/preferences';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts, useCurationShortcuts } from '@/lib/store/hooks';
-import type { TrackRowData } from '@/components/TrackRow';
+import type { TrackRowData, TrackRowBadge } from '@/components/TrackRow';
 
 interface CollectionItem {
   bcItemId: number;
@@ -473,19 +471,58 @@ export default function DiggerDetailClient({
 
   // Single source of truth for one collection-item row. Used by both the
   // virtualized and the plain rendering path so behaviour stays identical
-  // regardless of list size.
+  // regardless of list size. Uses the unified <TrackRow>.
   function renderCollectionItem(it: CollectionItem) {
-    const isCurrent = isCurrentItem(it);
-    const rowPlaying = isCurrent && playerIsPlaying;
     const isAlbum = it.bcItemType === 'a';
-    // Albums are now playable too: click triggers the player's album-
-    // expand flow (fetches tracklist, queues all tracks, plays the first
-    // one) and we open the row in the UI in parallel so the user can see
-    // what's loading.
-    const isPlayable = true;
     const isExpanded = expandedAlbumId === it.bcItemId;
     const expandedTracks = albumTracksCache.get(it.bcItemId);
-    function handlePlayClick() {
+
+    // Local lib id when the curator's track is also in our library — the
+    // queue lookup returns it for tracks resolved by the player or the
+    // server-side fully-heard pre-compute. null when the track hasn't
+    // been imported yet, in which case TrackRow's id is synthetic and
+    // TrackActionsBar lazy-resolves on first action click.
+    const queueEntry = queueByBcTrackId.get(it.bcItemId);
+    const localTrackId = queueEntry?.id ?? null;
+
+    const trackPlayedFlag =
+      it.hasBeenPlayed === true
+      || (!isAlbum && playedBcTrackIds.has(it.bcItemId));
+    const albumFullyHeard = isAlbum && (it.hasBeenPlayed === true || isAlbumFullyHeardLive(it));
+    const albumPartial = isAlbum && !albumFullyHeard ? albumPlayedCountLive(it) : null;
+
+    const trackData: TrackRowData = {
+      // Tracks: real lib-id when known, else synthetic negative bc-id so
+      // the player keeps it in queue order; albums: deep-negative id.
+      id: isAlbum
+        ? -1_000_000_000 - it.bcItemId
+        : (localTrackId ?? -it.bcItemId),
+      title: it.title,
+      artistName: it.artistName,
+      albumTitle: null,
+      durationSeconds: null,
+      trackNumber: null,
+      coverUrl: it.coverUrl,
+      bcUrl: it.bcUrl,
+      hasStream: !isAlbum,
+      bcTrackId: isAlbum ? undefined : it.bcItemId,
+      hasBeenPlayed: !isAlbum ? trackPlayedFlag : albumFullyHeard,
+      needsResolve: !isAlbum && localTrackId == null,
+      albumExpand: isAlbum,
+      labelName: it.labelName,
+      labelId: it.labelId,
+      labelBcUrl: it.labelBcUrl,
+      source: 'owned',
+      bcItemType: it.bcItemType,
+      partialPlayedFraction:
+        albumPartial && albumPartial.total > 0 ? albumPartial : undefined,
+    };
+
+    const badges: TrackRowBadge[] = it.isOwnedByYou
+      ? [{ label: 'You own this', tone: 'accent' }]
+      : [];
+
+    function onPlayOverride() {
       if (isAlbum && !isExpanded) {
         // Open the UI section in parallel to the player's expand-flow so
         // the user immediately sees the EP loading.
@@ -493,201 +530,84 @@ export default function DiggerDetailClient({
       }
       playItem(it);
     }
-    return (
-      <div
-        className={`flex flex-col border-b border-border last:border-b-0 ${
-          isCurrent ? 'bg-bg-elevated' : 'bg-bg-surface'
-        } ${it.isOwnedByYou && !isCurrent ? 'border-l-2 border-l-accent/40' : ''}`}
+
+    const albumExpandToggle = isAlbum ? (
+      <button
+        type="button"
+        onClick={() => toggleAlbumExpand(it)}
+        disabled={albumLoadingId === it.bcItemId}
+        title={isExpanded ? 'Hide tracks' : 'Show tracks of this album'}
+        aria-label={isExpanded ? 'Collapse album tracks' : 'Expand album tracks'}
+        aria-expanded={isExpanded}
+        className="flex h-9 flex-none items-center gap-1 rounded border border-border bg-bg-elevated px-2 text-xs text-fg-secondary transition-colors hover:border-accent hover:text-fg-primary disabled:opacity-50"
       >
-        <div className="flex items-center gap-3 p-2">
-        <button
-          type="button"
-          onClick={handlePlayClick}
-          disabled={!isPlayable}
-          title={
-            isAlbum
-              ? rowPlaying
-                ? 'Pause'
-                : 'Play (expand album + start first track)'
-              : rowPlaying
-                ? 'Pause'
-                : 'Play'
-          }
-          aria-label={rowPlaying ? 'Pause' : 'Play'}
-          className={`flex h-9 w-9 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
-            isCurrent
-              ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
-              : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
-          }`}
+        <span>{isExpanded ? 'Hide tracks' : 'Tracks'}</span>
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+          aria-hidden="true"
         >
-          {rowPlaying ? (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
-            </svg>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
-        <a
-          href={`/track/go?url=${encodeURIComponent(it.bcUrl)}`}
-          className="flex-none"
-          title="Open release (middle-click for new tab)"
-        >
-          {it.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={it.coverUrl}
-              alt=""
-              className="h-12 w-12 rounded object-cover"
-            />
-          ) : (
-            <div className="h-12 w-12 rounded bg-bg-elevated" />
-          )}
-        </a>
-        <div className="min-w-0 flex-1">
-          <a
-            href={`/track/go?url=${encodeURIComponent(it.bcUrl)}`}
-            className={`flex max-w-full items-center gap-2 truncate text-left text-sm font-medium hover:underline ${
-              isCurrent ? 'text-accent' : ''
-            }`}
-            title="Open track page (middle-click for new tab)"
-          >
-            {(() => {
-              if (it.bcItemType === 't' && (it.hasBeenPlayed || playedBcTrackIds.has(it.bcItemId))) {
-                return (
-                  <PlayedCheck
-                    trackId={queueByBcTrackId.get(it.bcItemId)?.id ?? null}
-                    bcTrackId={it.bcItemId}
-                  />
-                );
-              }
-              if (it.bcItemType === 'a') {
-                if (it.hasBeenPlayed || isAlbumFullyHeardLive(it)) {
-                  return (
-                    <PlayedCheck
-                      trackId={null}
-                      bcTrackId={null}
-                      tooltip="All tracks of this release heard"
-                    />
-                  );
-                }
-                // Variante A partial-played: count how many of the
-                // album's known tracks have been played live.
-                const stats = albumPlayedCountLive(it);
-                if (stats.played > 0 && stats.played < stats.total) {
-                  return <PartialPlayedDot played={stats.played} total={stats.total} />;
-                }
-              }
-              return null;
-            })()}
-            <span className="truncate">{it.title}</span>
-          </a>
-          {it.artistName ? (
-            <a
-              href={`/artist/go?url=${encodeURIComponent(it.bcUrl)}`}
-              className="block max-w-full truncate text-left text-xs text-fg-secondary hover:text-accent hover:underline"
-              title="Open artist page (middle-click for new tab)"
-            >
-              {it.artistName}
-            </a>
-          ) : (
-            <div className="block max-w-full truncate text-xs text-fg-muted">unknown</div>
-          )}
-          {it.labelName &&
-            (it.labelId != null ? (
-              <a
-                href={`/label/${it.labelId}`}
-                className="block max-w-full truncate text-xs text-fg-muted hover:text-accent hover:underline"
-                title={`Label: ${it.labelName} (middle-click for new tab)`}
-              >
-                <span className="opacity-60">on</span> {it.labelName}
-              </a>
-            ) : (
-              <div className="block max-w-full truncate text-xs text-fg-muted" title={`Label: ${it.labelName}`}>
-                <span className="opacity-60">on</span> {it.labelName}
-              </div>
-            ))}
-          {it.isOwnedByYou && !isCurrent && (
-            <div className="text-xs text-accent">You own this</div>
-          )}
-        </div>
-        <TrackActionsBar
-          bcUrl={it.bcUrl}
-          bcTrackId={it.bcItemType === 't' ? it.bcItemId : null}
-          localTrackId={queueByBcTrackId.get(it.bcItemId)?.id ?? null}
-          title={it.title}
-          artistName={it.artistName}
-          albumTitle={null}
-          coverUrl={it.coverUrl}
-          showFollow
-          labelBcUrl={it.labelBcUrl ?? null}
-          
-        />
-        {isAlbum && (
-          <button
-            type="button"
-            onClick={() => toggleAlbumExpand(it)}
-            disabled={albumLoadingId === it.bcItemId}
-            title={isExpanded ? 'Hide tracks' : 'Show tracks of this album'}
-            aria-label={isExpanded ? 'Collapse album tracks' : 'Expand album tracks'}
-            aria-expanded={isExpanded}
-            className="flex h-9 flex-none items-center gap-1 rounded border border-border bg-bg-elevated px-2 text-xs text-fg-secondary transition-colors hover:border-accent hover:text-fg-primary disabled:opacity-50"
-          >
-            <span>{isExpanded ? 'Hide tracks' : 'Tracks'}</span>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
-              aria-hidden="true"
-            >
-              <path d="m6 9 6 6 6-6" />
-            </svg>
-          </button>
+          <path d="m6 9 6 6 6-6" />
+        </svg>
+      </button>
+    ) : null;
+
+    const expandedRegion = isAlbum && isExpanded ? (
+      <div className="px-2 pb-2 pt-2">
+        {albumLoadingId === it.bcItemId && (
+          <p className="px-2 py-3 text-xs text-fg-muted">Loading tracks…</p>
         )}
-        </div>
-        {isAlbum && isExpanded && (
-          <div className="border-t border-border px-2 pb-2">
-            {albumLoadingId === it.bcItemId && (
-              <p className="px-2 py-3 text-xs text-fg-muted">Loading tracks…</p>
-            )}
-            {albumLoadError && albumLoadingId === null && !expandedTracks && (
-              <p className="px-2 py-3 text-xs text-fg-danger">{albumLoadError}</p>
-            )}
-            {expandedTracks && expandedTracks.length === 0 && (
-              <p className="px-2 py-3 text-xs text-fg-muted">
-                No tracks found for this release.
-              </p>
-            )}
-            {expandedTracks && expandedTracks.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {expandedTracks.map((tr) => (
-                  <DiggerAlbumTrackRow
-                    key={tr.bcTrackId}
-                    track={tr}
-                    siblings={expandedTracks}
-                    albumCoverUrl={it.coverUrl}
-                    buildQueueOnPlay={() =>
-                      buildDiggerQueueWithExpansion(
-                        collectionItems,
-                        it.bcItemId,
-                        expandedTracks,
-                      )
-                    }
-                  />
-                ))}
-              </div>
-            )}
+        {albumLoadError && albumLoadingId === null && !expandedTracks && (
+          <p className="px-2 py-3 text-xs text-fg-danger">{albumLoadError}</p>
+        )}
+        {expandedTracks && expandedTracks.length === 0 && (
+          <p className="px-2 py-3 text-xs text-fg-muted">
+            No tracks found for this release.
+          </p>
+        )}
+        {expandedTracks && expandedTracks.length > 0 && (
+          <div className="space-y-0">
+            {expandedTracks.map((tr) => (
+              <AlbumTrackCompactRow
+                key={tr.bcTrackId}
+                track={tr}
+                siblings={expandedTracks}
+                albumCoverUrl={it.coverUrl}
+                buildQueueOnPlay={() =>
+                  buildDiggerQueueWithExpansion(
+                    collectionItems,
+                    it.bcItemId,
+                    expandedTracks,
+                  )
+                }
+              />
+            ))}
           </div>
         )}
       </div>
+    ) : null;
+
+    return (
+      <TrackRow
+        key={`${it.bcItemType}-${it.bcItemId}`}
+        track={trackData}
+        titleHref={`/track/go?url=${encodeURIComponent(it.bcUrl)}`}
+        badges={badges}
+        showFollow
+        showArchive
+        hideAlbumColumn
+        hideDuration
+        onPlayOverride={onPlayOverride}
+        trailing={albumExpandToggle ?? undefined}
+        expandedContent={expandedRegion ?? undefined}
+      />
     );
   }
 
@@ -897,14 +817,6 @@ export default function DiggerDetailClient({
   );
 }
 
-function formatDuration(seconds: number | null): string {
-  if (seconds == null || !Number.isFinite(seconds)) return '';
-  const total = Math.round(seconds);
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
 /**
  * Build the queue from the curator's collection with one album expanded
  * to its tracklist inline. Used on Play of an individual EP-track so
@@ -969,7 +881,13 @@ function buildDiggerQueueWithExpansion(
   });
 }
 
-function DiggerAlbumTrackRow({
+/**
+ * Compact sub-row inside an expanded album. Uses the unified <TrackRow>
+ * primitive with `variant="compact"` so it shares the same action-bar,
+ * tooltip, and play behaviour as the full rows. The only differences:
+ * cover is replaced by the track number, no album/duration columns.
+ */
+function AlbumTrackCompactRow({
   track,
   siblings,
   albumCoverUrl,
@@ -978,19 +896,25 @@ function DiggerAlbumTrackRow({
   track: DiggerAlbumTrack;
   siblings: DiggerAlbumTrack[];
   albumCoverUrl: string | null;
-  /** Optional: build a contextual queue (curator collection with this EP
-   * expanded inline) so advance past the last EP-track lands on the next
-   * collection item, not currentId=null. */
   buildQueueOnPlay?: () => TrackRowData[];
 }) {
   const setQueue = usePlayerStore((s) => s.setQueue);
   const toggle = usePlayerStore((s) => s.toggle);
-  const playerCurrentId = usePlayerStore((s) => s.currentId);
-  const playerIsPlaying = usePlayerStore((s) => s.isPlaying);
-  const playedBcTrackIds = usePlayerStore((s) => s.playedBcTrackIds);
-  const isCurrent = playerCurrentId === track.trackId;
-  const isPlaying = isCurrent && playerIsPlaying;
-  const showPlayed = track.hasBeenPlayed || playedBcTrackIds.has(track.bcTrackId);
+
+  const trackData: TrackRowData = {
+    id: track.trackId,
+    title: track.title,
+    artistName: track.artistName,
+    albumTitle: null,
+    durationSeconds: track.durationSeconds,
+    trackNumber: track.trackNumber,
+    coverUrl: track.coverUrl ?? albumCoverUrl,
+    bcUrl: track.bcUrl,
+    hasStream: track.hasStream,
+    bcTrackId: track.bcTrackId,
+    hasBeenPlayed: track.hasBeenPlayed,
+    source: 'owned',
+  };
 
   function play() {
     if (buildQueueOnPlay) {
@@ -1017,61 +941,13 @@ function DiggerAlbumTrackRow({
   }
 
   return (
-    <div
-      className={`flex items-center gap-2 rounded px-2 py-1.5 ${
-        isCurrent ? 'bg-bg-elevated' : 'hover:bg-bg-hover'
-      }`}
-    >
-      <button
-        type="button"
-        onClick={play}
-        disabled={!track.hasStream}
-        title={isPlaying ? 'Pause' : 'Play'}
-        aria-label={isPlaying ? 'Pause' : 'Play'}
-        className={`flex h-7 w-7 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
-          isCurrent
-            ? 'border-accent bg-accent text-fg-on-accent'
-            : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
-        }`}
-      >
-        {isPlaying ? (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
-          </svg>
-        ) : (
-          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M8 5v14l11-7z" />
-          </svg>
-        )}
-      </button>
-      <span className="w-5 flex-none text-right font-mono text-xs text-fg-muted tabular-nums">
-        {track.trackNumber ?? ''}
-      </span>
-      <a
-        href={`/track/${track.bcTrackId}`}
-        className={`flex min-w-0 flex-1 items-center gap-1.5 truncate text-sm hover:underline ${
-          isCurrent ? 'text-accent' : ''
-        }`}
-      >
-        {showPlayed && (
-          <PlayedCheck trackId={track.trackId} bcTrackId={track.bcTrackId} />
-        )}
-        <span className="truncate">{track.title}</span>
-      </a>
-      <span className="flex-none font-mono text-xs text-fg-muted tabular-nums">
-        {formatDuration(track.durationSeconds)}
-      </span>
-      <TrackActionsBar
-        bcUrl={track.bcUrl}
-        bcTrackId={track.bcTrackId}
-        localTrackId={track.trackId}
-        title={track.title}
-        artistName={track.artistName}
-        albumTitle={null}
-        coverUrl={track.coverUrl ?? albumCoverUrl}
-        showFollow
-        
-      />
-    </div>
+    <TrackRow
+      track={trackData}
+      variant="compact"
+      position={track.trackNumber}
+      showFollow
+      showArchive
+      onPlayOverride={play}
+    />
   );
 }

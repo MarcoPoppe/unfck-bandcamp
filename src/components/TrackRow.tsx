@@ -1,12 +1,11 @@
 'use client';
 
+import type { ReactNode, CSSProperties } from 'react';
 import Link from 'next/link';
 import { usePlayerStore } from '@/lib/store/player';
-import WishlistButton from './WishlistButton';
-import AddToPlaylistButton from './AddToPlaylistButton';
-import CurationButtons from './CurationButtons';
-import FollowButton from './FollowButton';
+import TrackActionsBar from './TrackActionsBar';
 import PlayedCheck from './PlayedCheck';
+import PartialPlayedDot from './PartialPlayedDot';
 import PlaylistMembershipBadge from './PlaylistMembershipBadge';
 import Tooltip from './Tooltip';
 
@@ -52,21 +51,85 @@ export interface TrackRowData {
   labelName?: string | null;
   labelId?: number | null;
   labelBcUrl?: string | null;
-  /** Detected BPM if known (from prior playback). null until the analyzer
-   * has produced a stable reading for this track. */
   bpm?: number | null;
-  /** Original release date as Bandcamp reports it. ISO 8601 string or
-   * RFC-1123 — we render leniently. Only set on tracks imported after
-   * migration 16, older rows stay null until they pass through a fresh
-   * lookup. */
   releasedAt?: string | null;
-  /** Playlists this track sits in. Annotated by page loaders, not stored
-   * on the track row itself. Empty array when none. */
   playlists?: { id: number; name: string }[];
+  /** Curator-collection items remember whether they originated as a single
+   * track ("t") or an album/EP ("a"). Pages that mix both (curator detail)
+   * use this to render trailing controls like the album-expand toggle. */
+  bcItemType?: 't' | 'a';
+  /** For album/EP rows: how many sub-tracks the user has played already.
+   * When played > 0 && played < total a partial dot appears in place of
+   * the full-played check. Ignored when hasBeenPlayed is already true. */
+  partialPlayedFraction?: { played: number; total: number };
+}
+
+interface ReorderControls {
+  onMoveUp?: () => void;
+  onMoveDown?: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+}
+
+interface SelectableConfig {
+  selected: boolean;
+  onToggle: () => void;
+  label?: string;
+}
+
+export interface TrackRowBadge {
+  label: string;
+  tone: 'accent' | 'success' | 'muted';
 }
 
 interface Props {
   track: TrackRowData;
+
+  /**
+   * 'full' (default) renders cover + full metadata + album column.
+   * 'compact' renders position-number instead of cover, drops album+duration,
+   * used inside expanded album tracklists.
+   */
+  variant?: 'full' | 'compact';
+
+  /** 1-indexed position. In 'compact' it replaces the cover image. */
+  position?: number | null;
+
+  /** Up/down arrows in the leading slot. Used by playlist detail. */
+  reorderControls?: ReorderControls;
+
+  /** Checkbox in the leading slot. Used by Discover multi-select tabs. */
+  selectable?: SelectableConfig;
+
+  /** Slot rendered to the right of the action bar. Album-expand toggle,
+   * remove button, etc. */
+  trailing?: ReactNode;
+
+  /** Region rendered full-width below the row. Used to render expanded
+   * album-tracklists under a curator-collection album row. */
+  expandedContent?: ReactNode;
+
+  /** Action-bar gating. All default to true except where noted; set false
+   * to hide. Wishlist visibility is implicit in bcTrackId (no toggle). */
+  showPlaylist?: boolean;
+  showFollow?: boolean;
+  showArchive?: boolean;
+  showBcLink?: boolean;
+
+  /** Drop the album column. Curator-collection + Discover-Tracks already
+   * push album info into the title-block, so they hide the column. */
+  hideAlbumColumn?: boolean;
+  /** Drop the duration column. Playlists hide it, curator-collection
+   * inlines it differently. */
+  hideDuration?: boolean;
+
+  /** Override the title link target. Default `/track/[bcTrackId]`.
+   * Curator items pass `/track/go?url=…` so the resolver runs on click. */
+  titleHref?: string;
+
+  /** Pills next to the title. Curator-collection uses this for "You own this". */
+  badges?: TrackRowBadge[];
+
   /**
    * Optional override for the play button. When set, the row calls this
    * instead of `toggle(track.id)`. Used when the row sits inside a
@@ -97,225 +160,359 @@ function formatReleasedShort(s: string): string {
   return `${dd}.${mm}.${yyyy}`;
 }
 
-export default function TrackRow({ track, onPlayOverride }: Props) {
+const BADGE_TONE_CLASSES: Record<TrackRowBadge['tone'], string> = {
+  accent: 'bg-accent/15 text-accent border border-accent/40',
+  success: 'bg-success/15 text-success border border-success/40',
+  muted: 'bg-bg-elevated text-fg-secondary border border-border',
+};
+
+export default function TrackRow({
+  track,
+  variant = 'full',
+  position = null,
+  reorderControls,
+  selectable,
+  trailing,
+  expandedContent,
+  showPlaylist = true,
+  showFollow = true,
+  showArchive = true,
+  showBcLink = true,
+  hideAlbumColumn = false,
+  hideDuration = false,
+  titleHref,
+  badges,
+  onPlayOverride,
+}: Props) {
   const isCurrent = usePlayerStore((s) => s.currentId === track.id);
   const isPlaying = usePlayerStore((s) => s.currentId === track.id && s.isPlaying);
   const toggle = usePlayerStore((s) => s.toggle);
-  // Combine server-side hasBeenPlayed (from page load) with the live in-store
-  // set so the green checkmark lights up the moment a track passes the 1s
-  // threshold during the current session, without waiting for a reload.
   const hasBeenPlayedLive = usePlayerStore((s) =>
     track.bcTrackId != null ? s.playedBcTrackIds.has(track.bcTrackId) : false,
   );
   const showPlayed = track.hasBeenPlayed === true || hasBeenPlayedLive;
 
+  const isCompact = variant === 'compact';
+  const hasLeading = !!selectable || !!reorderControls || (position != null && !isCompact);
+
+  // Default title link target.
+  const resolvedTitleHref =
+    titleHref ?? (track.bcTrackId ? `/track/${track.bcTrackId}` : null);
+
+  // Grid template — cells collapse when their slot is empty. Mobile drops
+  // the album + duration columns so the row stays readable; sm+ shows them.
+  // We pass both templates as CSS variables and switch via a Tailwind
+  // breakpoint class — that's the only way to combine dynamic templates
+  // with responsive breakpoints.
+  const mobileParts: string[] = ['40px'];
+  if (hasLeading) mobileParts.push('40px');
+  mobileParts.push(isCompact ? '40px' : '48px');
+  mobileParts.push('minmax(0,1fr)');
+  mobileParts.push('auto');
+  if (trailing) mobileParts.push('auto');
+
+  const smParts: string[] = ['44px'];
+  if (hasLeading) smParts.push('40px');
+  smParts.push(isCompact ? '40px' : '56px');
+  smParts.push('minmax(0,1fr)');
+  if (!hideAlbumColumn && !isCompact) smParts.push('minmax(0,180px)');
+  if (!hideDuration && !isCompact) smParts.push('60px');
+  smParts.push('auto');
+  if (trailing) smParts.push('auto');
+
+  const mobileTemplate = mobileParts.join(' ');
+  const smTemplate = smParts.join(' ');
+
   return (
-    <div
-      className={`group grid grid-cols-[40px_48px_minmax(0,1fr)_auto] items-center gap-2 border-b border-border px-2 py-3 transition-colors hover:bg-bg-hover sm:grid-cols-[44px_56px_minmax(0,1fr)_minmax(0,180px)_60px_auto] sm:gap-3 sm:px-4 ${
-        isCurrent ? 'bg-bg-elevated' : 'bg-bg-surface'
-      }`}
-    >
-      <Tooltip
-        text={
-          !track.hasStream && (track.needsResolve || track.albumExpand || track.bcUrl)
-            ? 'Resolves on play (one BC roundtrip)'
-            : isPlaying
-              ? 'Pause (Space)'
-              : 'Play (Space)'
+    <div className="border-b border-border">
+      <div
+        className={`group grid items-center gap-2 px-2 py-3 transition-colors hover:bg-bg-hover [grid-template-columns:var(--cols-mobile)] sm:gap-3 sm:px-4 sm:[grid-template-columns:var(--cols-sm)] ${
+          isCurrent ? 'bg-bg-elevated' : 'bg-bg-surface'
+        }`}
+        style={
+          {
+            '--cols-mobile': mobileTemplate,
+            '--cols-sm': smTemplate,
+          } as CSSProperties
         }
-        position="top"
       >
-        <button
-          type="button"
-          onClick={() => (onPlayOverride ? onPlayOverride() : toggle(track.id))}
-          disabled={
-            !track.hasStream
-            && !track.needsResolve
-            && !track.albumExpand
-            && !track.bcUrl
+        {/* Play button — always col 1 */}
+        <Tooltip
+          text={
+            !track.hasStream && (track.needsResolve || track.albumExpand || track.bcUrl)
+              ? 'Resolves on play (one BC roundtrip)'
+              : isPlaying
+                ? 'Pause (Space)'
+                : 'Play (Space)'
           }
-          className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
-            isCurrent
-              ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
-              : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
-          }`}
-          aria-label={isPlaying ? 'Pause' : 'Play'}
+          position="top"
         >
-          {isPlaying ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
-            </svg>
-          ) : (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M8 5v14l11-7z" />
-            </svg>
-          )}
-        </button>
-      </Tooltip>
-      {track.bcTrackId ? (
-        <Link
-          href={`/track/${track.bcTrackId}`}
-          className="flex-none"
-          title="Open track page (middle-click for new tab)"
-        >
-          {track.coverUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={track.coverUrl}
-              alt=""
-              className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
-              loading="lazy"
-            />
-          ) : (
-            <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
-          )}
-        </Link>
-      ) : track.coverUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={track.coverUrl}
-          alt=""
-          className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
-          loading="lazy"
-        />
-      ) : (
-        <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
-      )}
-      <div className="min-w-0">
-        <div
-          className={`flex items-center gap-2 truncate text-base font-semibold ${
-            isCurrent ? 'text-accent' : 'text-fg-primary'
-          }`}
-        >
-          {showPlayed && (
-            <PlayedCheck
-              trackId={track.source !== 'discovered' ? track.id : null}
-              bcTrackId={track.bcTrackId ?? null}
-            />
-          )}
-          {track.bcTrackId ? (
-            <Link
-              href={`/track/${track.bcTrackId}`}
-              className="truncate hover:underline"
-              title="Open track page (middle-click for new tab)"
-            >
-              {track.title}
-            </Link>
-          ) : (
-            <span className="truncate">{track.title}</span>
-          )}
-          <PlaylistMembershipBadge
-            trackId={track.source !== 'discovered' ? track.id : null}
-            playlists={track.playlists}
-          />
-        </div>
-        {track.artistName ? (
-          track.bcUrl ? (
-            <a
-              href={`/artist/go?url=${encodeURIComponent(track.bcUrl)}`}
-              className="block truncate text-sm text-fg-secondary hover:text-accent hover:underline"
-              title="Open artist page (middle-click for new tab)"
-            >
-              {track.artistName}
-            </a>
-          ) : (
-            <div className="truncate text-sm text-fg-secondary">{track.artistName}</div>
-          )
-        ) : (
-          <div className="truncate text-sm text-fg-muted">unknown artist</div>
+          <button
+            type="button"
+            onClick={() => (onPlayOverride ? onPlayOverride() : toggle(track.id))}
+            disabled={
+              !track.hasStream
+              && !track.needsResolve
+              && !track.albumExpand
+              && !track.bcUrl
+            }
+            className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
+              isCurrent
+                ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
+                : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
+            }`}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          >
+            {isPlaying ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            )}
+          </button>
+        </Tooltip>
+
+        {/* Leading slot */}
+        {hasLeading && (
+          <div className="flex h-full items-center justify-center">
+            {selectable ? (
+              <input
+                type="checkbox"
+                checked={selectable.selected}
+                onChange={selectable.onToggle}
+                aria-label={selectable.label ?? 'Select track'}
+                className="h-4 w-4 cursor-pointer accent-accent"
+              />
+            ) : reorderControls ? (
+              <div className="flex flex-col items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={reorderControls.onMoveUp}
+                  disabled={!reorderControls.canMoveUp || !reorderControls.onMoveUp}
+                  aria-label="Move up"
+                  className="flex h-4 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 14l5-5 5 5z" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={reorderControls.onMoveDown}
+                  disabled={!reorderControls.canMoveDown || !reorderControls.onMoveDown}
+                  aria-label="Move down"
+                  className="flex h-4 w-6 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent disabled:cursor-not-allowed disabled:opacity-30"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M7 10l5 5 5-5z" />
+                  </svg>
+                </button>
+              </div>
+            ) : position != null ? (
+              <span className="font-mono text-sm tabular-nums text-fg-muted">
+                {position}
+              </span>
+            ) : null}
+          </div>
         )}
-        {track.discoveredViaName && (
-          <div className="truncate text-xs text-fg-secondary" title={`Discovered via ${track.discoveredViaName}`}>
-            <span className="text-fg-muted">via</span>{' '}
-            {track.discoveredViaBcFanId ? (
+
+        {/* Cover or position-number column */}
+        {isCompact ? (
+          <div className="flex h-10 w-10 items-center justify-center font-mono text-sm tabular-nums text-fg-muted">
+            {position ?? track.trackNumber ?? ''}
+          </div>
+        ) : track.bcTrackId ? (
+          <Link
+            href={`/track/${track.bcTrackId}`}
+            className="flex-none"
+            title="Open track page (middle-click for new tab)"
+          >
+            {track.coverUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={track.coverUrl}
+                alt=""
+                className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
+                loading="lazy"
+              />
+            ) : (
+              <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
+            )}
+          </Link>
+        ) : track.coverUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={track.coverUrl}
+            alt=""
+            className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
+            loading="lazy"
+          />
+        ) : (
+          <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
+        )}
+
+        {/* Title block */}
+        <div className="min-w-0">
+          <div
+            className={`flex items-center gap-2 truncate text-base font-semibold ${
+              isCurrent ? 'text-accent' : 'text-fg-primary'
+            }`}
+          >
+            {showPlayed ? (
+              <PlayedCheck
+                trackId={track.source !== 'discovered' ? track.id : null}
+                bcTrackId={track.bcTrackId ?? null}
+              />
+            ) : track.partialPlayedFraction
+                && track.partialPlayedFraction.played > 0
+                && track.partialPlayedFraction.played < track.partialPlayedFraction.total ? (
+              <PartialPlayedDot
+                played={track.partialPlayedFraction.played}
+                total={track.partialPlayedFraction.total}
+              />
+            ) : null}
+            {resolvedTitleHref ? (
               <Link
-                href={`/digger/${track.discoveredViaBcFanId}`}
-                className="hover:text-accent hover:underline"
+                href={resolvedTitleHref}
+                className="truncate hover:underline"
+                title="Open track page (middle-click for new tab)"
               >
-                {track.discoveredViaName}
+                {track.title}
               </Link>
             ) : (
-              track.discoveredViaName
+              <span className="truncate">{track.title}</span>
             )}
+            {badges?.map((b) => (
+              <span
+                key={b.label}
+                className={`flex-none rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${BADGE_TONE_CLASSES[b.tone]}`}
+              >
+                {b.label}
+              </span>
+            ))}
+            <PlaylistMembershipBadge
+              trackId={track.source !== 'discovered' ? track.id : null}
+              playlists={track.playlists}
+            />
           </div>
-        )}
-        {track.labelName &&
-          (track.labelId != null ? (
-            <a
-              href={`/label/${track.labelId}`}
-              className="block truncate text-xs text-fg-muted hover:text-accent hover:underline"
-              title={`Label: ${track.labelName} (middle-click for new tab)`}
-            >
-              <span className="opacity-60">on</span> {track.labelName}
-            </a>
+          {track.artistName ? (
+            track.bcUrl ? (
+              <a
+                href={`/artist/go?url=${encodeURIComponent(track.bcUrl)}`}
+                className="block truncate text-sm text-fg-secondary hover:text-accent hover:underline"
+                title="Open artist page (middle-click for new tab)"
+              >
+                {track.artistName}
+              </a>
+            ) : (
+              <div className="truncate text-sm text-fg-secondary">{track.artistName}</div>
+            )
           ) : (
-            <div className="truncate text-xs text-fg-muted" title={`Label: ${track.labelName}`}>
-              <span className="opacity-60">on</span> {track.labelName}
+            <div className="truncate text-sm text-fg-muted">unknown artist</div>
+          )}
+          {track.discoveredViaName && (
+            <div className="truncate text-xs text-fg-secondary" title={`Discovered via ${track.discoveredViaName}`}>
+              <span className="text-fg-muted">via</span>{' '}
+              {track.discoveredViaBcFanId ? (
+                <Link
+                  href={`/digger/${track.discoveredViaBcFanId}`}
+                  className="hover:text-accent hover:underline"
+                >
+                  {track.discoveredViaName}
+                </Link>
+              ) : (
+                track.discoveredViaName
+              )}
             </div>
-          ))}
-        {track.releasedAt && (
-          <div className="truncate text-xs text-fg-muted" title={`Released ${track.releasedAt}`}>
-            <span className="opacity-60">released</span> {formatReleasedShort(track.releasedAt)}
+          )}
+          {track.labelName &&
+            (track.labelId != null ? (
+              <a
+                href={`/label/${track.labelId}`}
+                className="block truncate text-xs text-fg-muted hover:text-accent hover:underline"
+                title={`Label: ${track.labelName} (middle-click for new tab)`}
+              >
+                <span className="opacity-60">on</span> {track.labelName}
+              </a>
+            ) : (
+              <div className="truncate text-xs text-fg-muted" title={`Label: ${track.labelName}`}>
+                <span className="opacity-60">on</span> {track.labelName}
+              </div>
+            ))}
+          {track.releasedAt && (
+            <div className="truncate text-xs text-fg-muted" title={`Released ${track.releasedAt}`}>
+              <span className="opacity-60">released</span> {formatReleasedShort(track.releasedAt)}
+            </div>
+          )}
+        </div>
+
+        {/* Album column (sm+ only, hidden when hideAlbumColumn or compact) */}
+        {!isCompact && !hideAlbumColumn && (
+          <div className="hidden truncate text-sm text-fg-muted sm:block">
+            {track.albumTitle ?? ''}
           </div>
         )}
-      </div>
-      <div className="hidden truncate text-sm text-fg-muted sm:block">
-        {track.albumTitle ?? ''}
-      </div>
-      <div className="hidden text-right font-mono text-xs text-fg-muted tabular-nums sm:block">
-        {formatDuration(track.durationSeconds)}
-      </div>
-      <div className="flex items-center justify-end gap-1.5">
-        {/* Order: Like (Heart) → Playlist (Music note) → Follow (Person+) → Archive. */}
-        {track.bcTrackId ? (
-          <WishlistButton
-            bcTrackId={track.bcTrackId}
+
+        {/* Duration (sm+ only, hidden when hideDuration or compact) */}
+        {!isCompact && !hideDuration && (
+          <div className="hidden text-right font-mono text-xs text-fg-muted tabular-nums sm:block">
+            {formatDuration(track.durationSeconds)}
+          </div>
+        )}
+
+        {/* Action bar — delegated to TrackActionsBar so the lazy-resolve
+            flow (curator items not yet imported) works uniformly. The BC
+            external-link button stays here, outside the action bar. */}
+        <div className="flex items-center justify-end gap-1.5">
+          <TrackActionsBar
             bcUrl={track.bcUrl}
+            bcTrackId={track.bcTrackId ?? null}
+            localTrackId={
+              track.source === 'discovered' || track.id < 0 ? null : track.id
+            }
             title={track.title}
             artistName={track.artistName}
             albumTitle={track.albumTitle}
             coverUrl={track.coverUrl}
-          />
-        ) : (
-          <span
-            className="flex h-9 w-9 items-center justify-center text-fg-muted opacity-30"
-            aria-hidden="true"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-            </svg>
-          </span>
-        )}
-        {/* Add-to-playlist only targets the local `tracks` table; for
-            discovered rows track.id is a discovered_tracks id, so passing it
-            would write to the wrong record. Hide for discovered. */}
-        {track.source !== 'discovered' && <AddToPlaylistButton trackId={track.id} />}
-        {track.bcUrl && <FollowButton entityType="artist" bcUrl={track.bcUrl} />}
-        {track.labelBcUrl && (
-          <FollowButton entityType="label" bcUrl={track.labelBcUrl} />
-        )}
-        {track.source !== 'discovered' && (
-          <CurationButtons
-            trackId={track.id}
             initialRating={track.rating ?? 0}
             initialArchived={!!track.archivedAt}
-            showArchive
+            showPlaylist={showPlaylist && track.source !== 'discovered'}
+            showFollow={showFollow}
+            showArchive={showArchive && track.source !== 'discovered'}
+            labelBcUrl={track.labelBcUrl ?? null}
           />
+          {showBcLink && (
+            <Tooltip text="Open on bandcamp.com" position="top">
+              <a
+                href={track.bcUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                aria-label="Open on bandcamp.com"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7" />
+                </svg>
+              </a>
+            </Tooltip>
+          )}
+        </div>
+
+        {/* Trailing slot */}
+        {trailing && (
+          <div className="flex items-center justify-end">{trailing}</div>
         )}
-        <Tooltip text="Open on bandcamp.com" position="top">
-        <a
-          href={track.bcUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-          aria-label="Open on bandcamp.com"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7" />
-          </svg>
-        </a>
-        </Tooltip>
       </div>
+
+      {/* Expanded content full-width below the row */}
+      {expandedContent && (
+        <div className="border-t border-border bg-bg-elevated/40">
+          {expandedContent}
+        </div>
+      )}
     </div>
   );
 }

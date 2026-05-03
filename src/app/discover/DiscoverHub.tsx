@@ -666,23 +666,15 @@ function TracksTab({
           </div>
           <div className="overflow-hidden rounded-lg border border-border">
             {visibleQueue.map((t) => (
-              <div
+              <TrackRow
                 key={t.id}
-                className={`flex items-center gap-2 border-b border-border px-2 last:border-b-0 ${
-                  selected.has(t.id) ? 'bg-bg-elevated' : ''
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected.has(t.id)}
-                  onChange={() => toggleSelected(t.id)}
-                  className="h-4 w-4 flex-none cursor-pointer accent-accent"
-                  aria-label={`Select ${t.title}`}
-                />
-                <div className="min-w-0 flex-1">
-                  <TrackRow track={t} />
-                </div>
-              </div>
+                track={t}
+                selectable={{
+                  selected: selected.has(t.id),
+                  onToggle: () => toggleSelected(t.id),
+                  label: `Select ${t.title}`,
+                }}
+              />
             ))}
           </div>
         </>

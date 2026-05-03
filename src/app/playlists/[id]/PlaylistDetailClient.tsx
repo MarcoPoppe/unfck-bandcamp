@@ -87,55 +87,43 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
     <>
       <div className="overflow-hidden rounded-lg border border-border">
         {tracks.map((t, idx) => (
-          <div
+          <TrackRow
             key={t.trackId}
-            className="grid grid-cols-[40px_1fr_120px] items-center border-b border-border bg-bg-surface px-3 py-2"
-          >
-            <div className="flex flex-col items-center text-fg-muted">
+            track={{
+              id: t.trackId,
+              title: t.title,
+              artistName: t.artistName,
+              albumTitle: t.albumTitle,
+              durationSeconds: t.durationSeconds,
+              trackNumber: null,
+              coverUrl: t.coverUrl,
+              bcUrl: t.bcUrl,
+              hasStream: t.hasStream,
+              bcTrackId: t.bcTrackId,
+              hasBeenPlayed: t.hasBeenPlayed,
+              source: 'owned',
+            }}
+            position={idx + 1}
+            reorderControls={{
+              onMoveUp: () => move(t.trackId, -1),
+              onMoveDown: () => move(t.trackId, 1),
+              canMoveUp: !busy && idx > 0,
+              canMoveDown: !busy && idx < tracks.length - 1,
+            }}
+            hideDuration
+            showFollow
+            showArchive
+            trailing={
               <button
                 type="button"
-                disabled={busy || idx === 0}
-                onClick={() => move(t.trackId, -1)}
-                className="text-xs hover:text-fg-primary disabled:opacity-20"
-                aria-label="Move up"
+                onClick={() => remove(t.trackId)}
+                disabled={busy}
+                className="rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger disabled:opacity-50"
               >
-                ▲
+                Remove
               </button>
-              <span className="text-xs">{idx + 1}</span>
-              <button
-                type="button"
-                disabled={busy || idx === tracks.length - 1}
-                onClick={() => move(t.trackId, 1)}
-                className="text-xs hover:text-fg-primary disabled:opacity-20"
-                aria-label="Move down"
-              >
-                ▼
-              </button>
-            </div>
-            <TrackRow
-              track={{
-                id: t.trackId,
-                title: t.title,
-                artistName: t.artistName,
-                albumTitle: t.albumTitle,
-                durationSeconds: t.durationSeconds,
-                trackNumber: null,
-                coverUrl: t.coverUrl,
-                bcUrl: t.bcUrl,
-                hasStream: t.hasStream,
-                bcTrackId: t.bcTrackId,
-                hasBeenPlayed: t.hasBeenPlayed,
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => remove(t.trackId)}
-              disabled={busy}
-              className="ml-auto rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger disabled:opacity-50"
-            >
-              Remove
-            </button>
-          </div>
+            }
+          />
         ))}
       </div>
       <StickyPlayerBar />
