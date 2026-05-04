@@ -18,6 +18,10 @@ on:
 # user never needs Node on their machine.
 env:
   NODE_BUNDLE_VERSION: "22.11.0"
+  # Opt into Node.js 24 for the runner-side JS actions ahead of the
+  # June 2026 enforcement, so we don't get the deprecation banner on
+  # every run.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   build-tauri:

@@ -65,6 +65,8 @@ Oder Schritt 2 einfach skippen — funktioniert auch nur mit Burner.
 - **/playlists**: handgemachte Setlists mit Reorder und Remove.
 - **/digger/[id]**: Curator-Profile, EPs aufklappbar, Tracks markieren.
 - **/history**: alle Plays ever, aggregiert pro Track mit Best-Completion und Play-Count.
+- **BPM-Detection**: läuft offline beim Abspielen, schreibt Tempo in die Library.
+- **Tempo-Controls**: Track temporär +/- 10 % Pitchen, ähnlich Beatport.
 - Suche überall in den Tracklisten (nach Title/Artist/Album).
 
 ---

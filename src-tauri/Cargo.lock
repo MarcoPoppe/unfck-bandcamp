@@ -4399,7 +4399,7 @@ checksum = "40ce102ab67701b8526c123c1bab5cbe42d7040ccfd0f64af1a385808d2f43de"
 
 [[package]]
 name = "unfck-bandcamp"
-version = "2.4.0"
+version = "2.4.1"
 dependencies = [
  "log",
  "serde",

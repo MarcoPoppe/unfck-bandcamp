@@ -1,5 +1,3 @@
-use tauri::Manager;
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -67,7 +65,7 @@ mod commands {
         // post-login page (anything under bandcamp.com/<something>
         // that's not /login or /signup), we're done logging in.
         let timeout = std::time::Instant::now() + Duration::from_secs(300);
-        let mut detected_username: Option<String> = None;
+        let detected_username: Option<String>;
         loop {
             if std::time::Instant::now() > timeout {
                 if let Some(w) = app.get_webview_window(&label) {

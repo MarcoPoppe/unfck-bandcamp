@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <title>Unfck Bandcamp</title>
+  <link rel="icon" href="logo.png" />
   <style>
     html, body {
       margin: 0;
@@ -18,13 +19,16 @@
     }
     .wrap { text-align: center; }
     .logo {
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: -0.02em;
+      max-width: 320px;
+      width: 60vw;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+      user-select: none;
+      -webkit-user-drag: none;
     }
-    .accent { color: #ffb300; }
     .status {
-      margin-top: 16px;
+      margin-top: 20px;
       font-size: 13px;
       color: #888;
     }
@@ -36,7 +40,7 @@
       word-wrap: break-word;
     }
     .spinner {
-      margin: 24px auto 0;
+      margin: 28px auto 0;
       width: 28px;
       height: 28px;
       border: 3px solid #222;
@@ -49,7 +53,7 @@
 </head>
 <body>
   <div class="wrap">
-    <div class="logo"><span class="accent">unfck</span> bandcamp</div>
+    <img src="logo.png" alt="unfck bandcamp" class="logo" />
     <div class="spinner"></div>
     <div class="status" id="s">Starting local server…</div>
     <div class="err" id="e"></div>
