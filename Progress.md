@@ -1,6 +1,8 @@
 # Unfck Bandcamp
 
-**Version:** 2.0.0 (siehe `package.json`) — erste installierbare Tauri-Release.
+**Version:** 2.0.1 (siehe `package.json`) — erste installierbare Tauri-Release mit funktionierendem Auto-Updater.
+**Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/tag/v2.0.1
+
 **Status:** Phase AJ durch — Tauri-Distribution + Auto-Updater verkabelt. TrackRow-Unification (Phase AI, v1.45.0) bleibt eingerollt. Tauri-Wrapper mit Sidecar-Pattern (Rust spawnt Next.js standalone server auf 127.0.0.1:3457), Updater-Plugin auf GitHub-Releases-latest.json mit ed25519-signed manifests, GitHub Actions Release-Pipeline für Win/macOS-arm64/macOS-x86_64/Linux. Setup-Wizard zeigt "Sign in with Bandcamp"-Buttons unter Tauri (Embedded-Login Rust-Backend ist scaffolded mit Polling-Loop, Cookie-Extraction-API noch zu vervollständigen — Wizard fällt graceful auf Cookie-Paste zurück). Code-Signing übersprungen (out of scope laut Spec). Phase 5 Friend-Test übersprungen.
 **Repo:** `https://github.com/MarcoPoppe/unfck-bandcamp` (privat).
 **Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose oder `npm run dev` bleibt Option für Power-User.
