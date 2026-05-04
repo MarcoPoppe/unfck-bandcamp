@@ -540,11 +540,11 @@ export default function DiggerDetailClient({
         title={isExpanded ? 'Hide tracks' : 'Show tracks of this album'}
         aria-label={isExpanded ? 'Collapse album tracks' : 'Expand album tracks'}
         aria-expanded={isExpanded}
-        className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-border bg-bg-elevated text-fg-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
+        className="flex h-9 w-9 flex-none items-center justify-center rounded-full border border-border bg-bg-elevated text-fg-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       >
         <svg
-          width="20"
-          height="20"
+          width="18"
+          height="18"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"

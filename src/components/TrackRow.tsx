@@ -168,21 +168,23 @@ export default function TrackRow({
 
   // Grid template: [pre?] [play] [mid?] [cover-or-pos] [title] [album?]
   // [duration?] [actions?] [trailing?]. Album-rows skip the action slot
-  // entirely. Mobile drops album+duration columns.
+  // entirely. Mobile drops album+duration columns. Sizes match the
+  // Wishlist row Marco picked as the visual reference (play 36px, cover
+  // 48px, p-3 padding).
   const mobileParts: string[] = [];
-  if (hasPreLeading) mobileParts.push('40px');
-  mobileParts.push('40px'); // play
-  if (hasMidLeading) mobileParts.push('40px');
-  mobileParts.push(isCompact ? '40px' : '48px'); // cover / position
+  if (hasPreLeading) mobileParts.push('36px');
+  mobileParts.push('36px'); // play
+  if (hasMidLeading) mobileParts.push('36px');
+  mobileParts.push(isCompact ? '36px' : '48px'); // cover / position
   mobileParts.push('minmax(0,1fr)'); // title
   if (!isAlbumRow) mobileParts.push('auto'); // actions
   if (trailing) mobileParts.push('auto');
 
   const smParts: string[] = [];
-  if (hasPreLeading) smParts.push('40px');
-  smParts.push('44px'); // play
-  if (hasMidLeading) smParts.push('40px');
-  smParts.push(isCompact ? '40px' : '56px');
+  if (hasPreLeading) smParts.push('36px');
+  smParts.push('36px'); // play
+  if (hasMidLeading) smParts.push('36px');
+  smParts.push(isCompact ? '36px' : '48px');
   smParts.push('minmax(0,1fr)');
   if (!hideAlbumColumn && !isCompact) smParts.push('minmax(0,180px)');
   if (!hideDuration && !isCompact) smParts.push('60px');
@@ -199,7 +201,7 @@ export default function TrackRow({
       }`}
     >
       <div
-        className={`group grid items-center gap-2 px-2 py-3 [grid-template-columns:var(--cols-mobile)] sm:gap-3 sm:px-4 sm:[grid-template-columns:var(--cols-sm)] ${
+        className={`group grid items-center gap-3 p-3 [grid-template-columns:var(--cols-mobile)] sm:[grid-template-columns:var(--cols-sm)] ${
           isCurrent ? 'bg-bg-elevated' : ''
         }`}
         style={
@@ -246,7 +248,7 @@ export default function TrackRow({
               && !track.albumExpand
               && !track.bcUrl
             }
-            className={`flex h-10 w-10 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
               isCurrent
                 ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
                 : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
@@ -319,11 +321,11 @@ export default function TrackRow({
               <img
                 src={track.coverUrl}
                 alt=""
-                className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
+                className="h-12 w-12 rounded object-cover"
                 loading="lazy"
               />
             ) : (
-              <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
+              <div className="h-12 w-12 rounded bg-bg-elevated" />
             )}
           </Link>
         ) : track.coverUrl ? (
@@ -331,11 +333,11 @@ export default function TrackRow({
           <img
             src={track.coverUrl}
             alt=""
-            className="h-12 w-12 rounded object-cover sm:h-14 sm:w-14"
+            className="h-12 w-12 rounded object-cover"
             loading="lazy"
           />
         ) : (
-          <div className="h-12 w-12 rounded bg-bg-elevated sm:h-14 sm:w-14" />
+          <div className="h-12 w-12 rounded bg-bg-elevated" />
         )}
 
         {/* Title block */}
