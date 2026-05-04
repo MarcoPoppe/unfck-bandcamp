@@ -7,6 +7,7 @@ import { usePreferences } from '@/lib/settings/preferences';
 import { THEME_CHANGE_EVENT } from '@/lib/settings/theme';
 import { detectBpmForTrack } from '@/lib/audio/detect_bpm';
 import WishlistButton from './WishlistButton';
+import AddToPlaylistButton from './AddToPlaylistButton';
 import TempoControls from './TempoControls';
 import Tooltip from './Tooltip';
 import type { TrackRowData } from './TrackRow';
@@ -911,20 +912,10 @@ export default function StickyPlayerBar() {
               coverUrl={current.coverUrl}
             />
           )}
-          {current && (
-            <Tooltip text="Open on bandcamp.com" position="top">
-              <a
-                href={current.bcUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                aria-label="Open on bandcamp.com"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7" />
-                </svg>
-              </a>
-            </Tooltip>
+          {current
+            && current.id > 0
+            && current.source !== 'discovered' && (
+            <AddToPlaylistButton trackId={current.id} />
           )}
           <Tooltip text="Previous track (A)" position="top">
             <button

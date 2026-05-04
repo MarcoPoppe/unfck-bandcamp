@@ -384,55 +384,71 @@ export default function TrackRow({
               playlists={track.playlists}
             />
           </div>
-          {track.artistName ? (
-            track.bcUrl ? (
-              <a
-                href={`/artist/go?url=${encodeURIComponent(track.bcUrl)}`}
-                className="block truncate text-sm text-fg-secondary hover:text-accent hover:underline"
-                title="Open artist page (middle-click for new tab)"
-              >
-                {track.artistName}
-              </a>
-            ) : (
-              <div className="truncate text-sm text-fg-secondary">{track.artistName}</div>
-            )
-          ) : (
-            <div className="truncate text-sm text-fg-muted">unknown artist</div>
-          )}
-          {track.discoveredViaName && (
-            <div className="truncate text-xs text-fg-secondary" title={`Discovered via ${track.discoveredViaName}`}>
-              <span className="text-fg-muted">via</span>{' '}
-              {track.discoveredViaBcFanId ? (
-                <Link
-                  href={`/digger/${track.discoveredViaBcFanId}`}
-                  className="hover:text-accent hover:underline"
+          {/* Single meta line — Wishlist-height: artist · via curator ·
+              on label · released 2024. Each segment is its own clickable
+              element, separated by a thin dot. Keeps the row at 2 lines
+              total (title + meta) so the card stays compact. */}
+          <div className="flex items-center gap-1.5 truncate text-sm text-fg-secondary">
+            {track.artistName ? (
+              track.bcUrl ? (
+                <a
+                  href={`/artist/go?url=${encodeURIComponent(track.bcUrl)}`}
+                  className="truncate hover:text-accent hover:underline"
+                  title="Open artist page (middle-click for new tab)"
                 >
-                  {track.discoveredViaName}
-                </Link>
+                  {track.artistName}
+                </a>
               ) : (
-                track.discoveredViaName
-              )}
-            </div>
-          )}
-          {track.labelName &&
-            (track.labelId != null ? (
-              <a
-                href={`/label/${track.labelId}`}
-                className="block truncate text-xs text-fg-muted hover:text-accent hover:underline"
-                title={`Label: ${track.labelName} (middle-click for new tab)`}
-              >
-                <span className="opacity-60">on</span> {track.labelName}
-              </a>
+                <span className="truncate">{track.artistName}</span>
+              )
             ) : (
-              <div className="truncate text-xs text-fg-muted" title={`Label: ${track.labelName}`}>
-                <span className="opacity-60">on</span> {track.labelName}
-              </div>
-            ))}
-          {track.releasedAt && (
-            <div className="truncate text-xs text-fg-muted" title={`Released ${track.releasedAt}`}>
-              <span className="opacity-60">released</span> {formatReleasedShort(track.releasedAt)}
-            </div>
-          )}
+              <span className="truncate text-fg-muted">unknown artist</span>
+            )}
+            {track.discoveredViaName && (
+              <>
+                <span className="flex-none text-fg-muted" aria-hidden="true">·</span>
+                <span className="truncate" title={`Discovered via ${track.discoveredViaName}`}>
+                  <span className="text-fg-muted">via</span>{' '}
+                  {track.discoveredViaBcFanId ? (
+                    <Link
+                      href={`/digger/${track.discoveredViaBcFanId}`}
+                      className="hover:text-accent hover:underline"
+                    >
+                      {track.discoveredViaName}
+                    </Link>
+                  ) : (
+                    track.discoveredViaName
+                  )}
+                </span>
+              </>
+            )}
+            {track.labelName && (
+              <>
+                <span className="flex-none text-fg-muted" aria-hidden="true">·</span>
+                {track.labelId != null ? (
+                  <a
+                    href={`/label/${track.labelId}`}
+                    className="truncate text-fg-muted hover:text-accent hover:underline"
+                    title={`Label: ${track.labelName}`}
+                  >
+                    {track.labelName}
+                  </a>
+                ) : (
+                  <span className="truncate text-fg-muted" title={`Label: ${track.labelName}`}>
+                    {track.labelName}
+                  </span>
+                )}
+              </>
+            )}
+            {track.releasedAt && (
+              <>
+                <span className="flex-none text-fg-muted" aria-hidden="true">·</span>
+                <span className="flex-none text-fg-muted" title={`Released ${track.releasedAt}`}>
+                  {formatReleasedShort(track.releasedAt)}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Album column (sm+ only) */}
