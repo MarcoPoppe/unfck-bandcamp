@@ -1,6 +1,6 @@
 {
   "name": "unfck-bandcamp",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3457",
@@ -16,6 +16,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-process": "^2.3.1",
+    "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "better-sqlite3": "12.9.0",
     "cheerio": "1.0.0",

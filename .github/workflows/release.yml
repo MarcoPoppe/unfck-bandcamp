@@ -10,6 +10,15 @@ on:
 # `latest.json` manifest the Tauri updater plugin polls. Triggering a
 # tag like `v2.0.0` runs the matrix; tauri-action attaches every
 # artifact + the manifest to a single GitHub Release.
+#
+# Node bundling (v2.4.0+): before each `tauri build`, we download the
+# official Node binary for the runner's OS and rename it to the
+# `node-<TARGET_TRIPLE>` filename Tauri's externalBin mechanism
+# expects. The bundler then packs Node into the installer so the
+# user never needs Node on their machine.
+env:
+  NODE_BUNDLE_VERSION: "22.11.0"
+
 jobs:
   build-tauri:
     permissions:
@@ -20,12 +29,20 @@ jobs:
         include:
           - platform: macos-latest
             args: "--target aarch64-apple-darwin"
+            target_triple: "aarch64-apple-darwin"
+            node_archive: "darwin-arm64.tar.gz"
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
+            target_triple: "x86_64-apple-darwin"
+            node_archive: "darwin-x64.tar.gz"
           - platform: ubuntu-22.04
             args: ""
+            target_triple: "x86_64-unknown-linux-gnu"
+            node_archive: "linux-x64.tar.xz"
           - platform: windows-latest
             args: ""
+            target_triple: "x86_64-pc-windows-msvc"
+            node_archive: "win-x64.zip"
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -56,6 +73,48 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      # Download official Node binary for this OS and place it under
+      # src-tauri/binaries/node-<TARGET_TRIPLE>[.exe] so Tauri's
+      # externalBin packs it into the installer. The user's machine
+      # then never needs a system-wide Node install.
+      - name: Bundle Node (Unix)
+        if: matrix.platform != 'windows-latest'
+        shell: bash
+        run: |
+          set -e
+          VER="${NODE_BUNDLE_VERSION}"
+          ARCHIVE="${{ matrix.node_archive }}"
+          URL="https://nodejs.org/dist/v${VER}/node-v${VER}-${ARCHIVE}"
+          mkdir -p src-tauri/binaries
+          curl -fsSL "${URL}" -o /tmp/node.archive
+          mkdir -p /tmp/node-extract
+          if [[ "${ARCHIVE}" == *.tar.xz ]]; then
+            tar -xJf /tmp/node.archive -C /tmp/node-extract
+          else
+            tar -xzf /tmp/node.archive -C /tmp/node-extract
+          fi
+          NODE_BIN="$(find /tmp/node-extract -type f -name node | head -1)"
+          if [[ -z "${NODE_BIN}" ]]; then
+            echo "Node binary not found in archive"
+            exit 1
+          fi
+          cp "${NODE_BIN}" "src-tauri/binaries/node-${{ matrix.target_triple }}"
+          chmod +x "src-tauri/binaries/node-${{ matrix.target_triple }}"
+          ls -la src-tauri/binaries/
+
+      - name: Bundle Node (Windows)
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ver = $env:NODE_BUNDLE_VERSION
+          $url = "https://nodejs.org/dist/v$ver/node-v$ver-win-x64.zip"
+          New-Item -ItemType Directory -Force -Path src-tauri/binaries | Out-Null
+          Invoke-WebRequest -Uri $url -OutFile $env:TEMP\node.zip
+          Expand-Archive -Path $env:TEMP\node.zip -DestinationPath $env:TEMP\node-extract -Force
+          $nodeBin = Get-ChildItem -Path $env:TEMP\node-extract -Recurse -Filter node.exe | Select-Object -First 1
+          Copy-Item $nodeBin.FullName "src-tauri/binaries/node-${{ matrix.target_triple }}.exe"
+          Get-ChildItem src-tauri/binaries/
+
       - name: Build + bundle (signed)
         uses: tauri-apps/tauri-action@v0
         env:
@@ -66,14 +125,15 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Unfck Bandcamp ${{ github.ref_name }}"
           releaseBody: |
-            See the changelog in CHANGELOG.md or the commit log for details.
+            Self-hosted Bandcamp discovery tool. **Doppelklick + los**: Node ist
+            gebundelt, keine Vorbedingungen auf dem Rechner.
 
-            **Install (unsigned, for friend test):**
-            - Windows: download the `.msi` and click "Run anyway" past SmartScreen.
-            - macOS: download the `.dmg`, then right-click the app and "Open" once to bypass Gatekeeper.
-            - Linux: download the `.AppImage`, `chmod +x`, run.
+            **Install (unsigned):**
+            - **Windows**: lad die `.msi` runter, doppelklick. Bei "Windows hat den PC geschützt" auf "Weitere Informationen" → "Trotzdem ausführen" klicken.
+            - **macOS**: lad die `.dmg` runter, mounte sie, ziehe die App in /Applications. Beim ersten Öffnen Rechtsklick → "Öffnen" → "Öffnen" — danach normal startbar.
+            - **Linux**: `.AppImage` runterladen, `chmod +x`, ausführen.
 
-            Auto-update is enabled — future releases install themselves on next launch.
+            Auto-update ist aktiv — neue Releases installieren sich beim nächsten App-Start automatisch.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}

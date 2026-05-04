@@ -17,6 +17,17 @@
     "updater:allow-check",
     "updater:allow-download",
     "updater:allow-install",
-    "updater:allow-download-and-install"
+    "updater:allow-download-and-install",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "node",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
   ]
 }

@@ -5,16 +5,17 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![commands::open_bandcamp_login])
         .setup(|app| {
             // In release builds we spawn the Next.js standalone server as
-            // a sidecar process. The webview shell at
-            // `public/tauri-shell/index.html` polls /api/health and
-            // redirects to the live UI once the server is reachable.
+            // a sidecar process. Node is bundled with the app via the
+            // tauri externalBin mechanism — see release.yml which fetches
+            // the official Node binary per OS-triple before bundling.
             // In debug builds Tauri's beforeDevCommand already runs
             // `npm run dev`, so we skip the spawn there.
             if !cfg!(debug_assertions) {
-                sidecar::spawn_nextjs_server(app)?;
+                sidecar::spawn_nextjs_server(app.handle())?;
             }
             Ok(())
         })
@@ -133,15 +134,15 @@ mod commands {
 }
 
 mod sidecar {
-    use std::process::{Command, Stdio};
-    use tauri::Manager;
+    use tauri::{AppHandle, Manager};
+    use tauri_plugin_shell::ShellExt;
 
     /// Default loopback port for the embedded Next.js server. Matches the
     /// `npm run dev` script so a developer who runs `tauri dev` sees the
     /// same UI as a release build.
     pub const PORT: u16 = 3457;
 
-    pub fn spawn_nextjs_server(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn spawn_nextjs_server(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         // Resource dir contains the bundled standalone server tree.
         // Tauri exposes the resolved app-resource path; the
         // `.next/standalone` tree was registered as a bundle resource in
@@ -159,26 +160,30 @@ mod sidecar {
         let data_dir = app.path().app_data_dir()?.join("data");
         std::fs::create_dir_all(&data_dir).ok();
 
-        let mut cmd = Command::new("node");
-        cmd.arg(&server_js)
-            .env("PORT", PORT.to_string())
-            .env("HOSTNAME", "127.0.0.1")
-            .env("DATABASE_PATH", data_dir.join("unfck.db"))
-            .env("UNFCK_DATA_DIR", &data_dir)
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit());
-
         log::info!(
-            "Spawning Next.js sidecar: node {} (port {}, data {})",
+            "Spawning Next.js sidecar: bundled-node {} (port {}, data {})",
             server_js.display(),
             PORT,
             data_dir.display()
         );
 
-        // Detach: the child runs for the lifetime of the app. On app
-        // exit Windows closes the process tree, macOS/Linux Tauri's
-        // graceful shutdown hooks handle it.
-        cmd.spawn()?;
+        // Use Tauri's sidecar API: it resolves the bundled node binary
+        // (named `node-<TARGET_TRIPLE>` in src-tauri/binaries/) at
+        // runtime and spawns it. No PATH-Node needed on the user's
+        // machine — Marco's friends just install + click + go.
+        let server_js_str = server_js.to_string_lossy().to_string();
+        let db_path_str = data_dir.join("unfck.db").to_string_lossy().to_string();
+        let data_dir_str = data_dir.to_string_lossy().to_string();
+        let (_rx, _child) = app
+            .shell()
+            .sidecar("node")?
+            .args([&server_js_str])
+            .env("PORT", PORT.to_string())
+            .env("HOSTNAME", "127.0.0.1")
+            .env("DATABASE_PATH", db_path_str)
+            .env("UNFCK_DATA_DIR", data_dir_str)
+            .spawn()?;
+
         Ok(())
     }
 }
