@@ -1480,11 +1480,6 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
                   className="h-4 w-4 cursor-pointer accent-accent"
                 />
                 Hide curators I already follow
-                {hiddenFollowedCount > 0 && (
-                  <span className="rounded-full bg-bg-elevated px-1.5 py-0.5 text-[10px] font-mono text-fg-secondary">
-                    {hiddenFollowedCount}
-                  </span>
-                )}
               </label>
             </div>
             {visibleDiggers.length === 0 ? (

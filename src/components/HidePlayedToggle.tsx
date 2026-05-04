@@ -37,9 +37,6 @@ export default function HidePlayedToggle({ count }: { count?: number }) {
         </svg>
       )}
       {active ? 'Hidden' : 'Hide played'}
-      {count != null && count > 0 && active && (
-        <span className="rounded-full bg-bg-base/40 px-1.5 text-[10px]">{count}</span>
-      )}
     </button>
     </Tooltip>
   );

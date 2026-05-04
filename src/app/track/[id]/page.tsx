@@ -18,6 +18,30 @@ function localIdFromBcTrackId(bcTrackId: number): number | null {
   return row?.id ?? null;
 }
 
+/**
+ * Find a known Bandcamp URL for a given numeric track id by checking
+ * peripheral tables (discovered_tracks, wishlist). Bandcamp's mobile
+ * tralbum_details endpoint 404s for some tracks when called with a
+ * numeric id, but lookupTrack works reliably with a real bcUrl. So
+ * before declaring a track unresolvable we cast a wider net.
+ */
+function findKnownBcUrl(bcTrackId: number): string | null {
+  const db = getDb();
+  const fromDiscovered = db
+    .prepare<[number], { bc_url: string | null }>(
+      'SELECT bc_url FROM discovered_tracks WHERE bc_track_id = ? AND bc_url IS NOT NULL LIMIT 1',
+    )
+    .get(bcTrackId);
+  if (fromDiscovered?.bc_url) return fromDiscovered.bc_url;
+  const fromWishlist = db
+    .prepare<[number], { bc_url: string | null }>(
+      'SELECT bc_url FROM wishlist WHERE bc_track_id = ? AND bc_url IS NOT NULL LIMIT 1',
+    )
+    .get(bcTrackId);
+  if (fromWishlist?.bc_url) return fromWishlist.bc_url;
+  return null;
+}
+
 export default async function TrackPermalinkPage({
   params,
 }: {
@@ -46,15 +70,23 @@ export default async function TrackPermalinkPage({
   let localId = localIdFromBcTrackId(bcTrackId);
   let lookupError: string | null = null;
   if (!localId) {
-    try {
-      const result = await lookupTrack(String(bcTrackId));
-      localId = result.trackId;
-    } catch (err) {
-      // Bandcamp's mobile/24/tralbum_details endpoint 404s for some
-      // tracks (Marco's memo: "404t bei manchen Tracks"). Don't punt to
-      // notFound() — show a friendlier dead-end with a BC fallback link
-      // so the user can still hear the track on bandcamp.com.
-      lookupError = err instanceof Error ? err.message : 'Lookup failed';
+    // Two-stage lookup: prefer a known bcUrl from discovered_tracks /
+    // wishlist (Bandcamp's URL-based lookup is reliable), and only
+    // fall back to the numeric id when we have no URL hint at all
+    // (the mobile tralbum_details endpoint 404s for some tracks).
+    const knownBcUrl = findKnownBcUrl(bcTrackId);
+    const lookupInputs = knownBcUrl
+      ? [knownBcUrl, String(bcTrackId)]
+      : [String(bcTrackId)];
+    for (const input of lookupInputs) {
+      try {
+        const result = await lookupTrack(input);
+        localId = result.trackId;
+        lookupError = null;
+        break;
+      } catch (err) {
+        lookupError = err instanceof Error ? err.message : 'Lookup failed';
+      }
     }
   }
   if (!localId) {

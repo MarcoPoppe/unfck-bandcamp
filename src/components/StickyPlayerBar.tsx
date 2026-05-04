@@ -7,7 +7,7 @@ import { usePreferences } from '@/lib/settings/preferences';
 import { THEME_CHANGE_EVENT } from '@/lib/settings/theme';
 import { detectBpmForTrack } from '@/lib/audio/detect_bpm';
 import WishlistButton from './WishlistButton';
-import AddToPlaylistButton from './AddToPlaylistButton';
+import LazyAddToPlaylistButton from './LazyAddToPlaylistButton';
 import TempoControls from './TempoControls';
 import Tooltip from './Tooltip';
 import type { TrackRowData } from './TrackRow';
@@ -912,10 +912,16 @@ export default function StickyPlayerBar() {
               coverUrl={current.coverUrl}
             />
           )}
-          {current
-            && current.id > 0
-            && current.source !== 'discovered' && (
-            <AddToPlaylistButton trackId={current.id} />
+          {current && (
+            <LazyAddToPlaylistButton
+              trackId={
+                current.id > 0 && current.source !== 'discovered'
+                  ? current.id
+                  : null
+              }
+              bcTrackId={current.bcTrackId}
+              bcUrl={current.bcUrl}
+            />
           )}
           <Tooltip text="Previous track (A)" position="top">
             <button
