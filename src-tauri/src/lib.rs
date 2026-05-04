@@ -133,6 +133,7 @@ mod commands {
 
 mod sidecar {
     use tauri::{AppHandle, Manager};
+    use tauri_plugin_shell::process::CommandEvent;
     use tauri_plugin_shell::ShellExt;
 
     /// Default loopback port for the embedded Next.js server. Matches the
@@ -165,6 +166,13 @@ mod sidecar {
             data_dir.display()
         );
 
+        if !server_js.exists() {
+            log::error!(
+                "server.js not found at expected path {} — bundle resource layout mismatch",
+                server_js.display()
+            );
+        }
+
         // Use Tauri's sidecar API: it resolves the bundled node binary
         // (named `node-<TARGET_TRIPLE>` in src-tauri/binaries/) at
         // runtime and spawns it. No PATH-Node needed on the user's
@@ -172,7 +180,7 @@ mod sidecar {
         let server_js_str = server_js.to_string_lossy().to_string();
         let db_path_str = data_dir.join("unfck.db").to_string_lossy().to_string();
         let data_dir_str = data_dir.to_string_lossy().to_string();
-        let (_rx, _child) = app
+        let (mut rx, _child) = app
             .shell()
             .sidecar("node")?
             .args([&server_js_str])
@@ -181,6 +189,32 @@ mod sidecar {
             .env("DATABASE_PATH", db_path_str)
             .env("UNFCK_DATA_DIR", data_dir_str)
             .spawn()?;
+
+        // Pipe sidecar stdout/stderr into our log so we can diagnose
+        // boot failures from the user's machine. Writes go to whatever
+        // tauri-plugin-log is configured for (default: app log dir).
+        tauri::async_runtime::spawn(async move {
+            while let Some(event) = rx.recv().await {
+                match event {
+                    CommandEvent::Stdout(line) => {
+                        log::info!("[sidecar] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Stderr(line) => {
+                        log::warn!("[sidecar] {}", String::from_utf8_lossy(&line));
+                    }
+                    CommandEvent::Error(e) => {
+                        log::error!("[sidecar error] {}", e);
+                    }
+                    CommandEvent::Terminated(payload) => {
+                        log::error!(
+                            "[sidecar terminated] code={:?} signal={:?}",
+                            payload.code, payload.signal
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        });
 
         Ok(())
     }

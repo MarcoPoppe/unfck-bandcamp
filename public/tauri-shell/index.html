@@ -57,17 +57,29 @@
     <div class="spinner"></div>
     <div class="status" id="s">Starting local server…</div>
     <div class="err" id="e"></div>
+    <div class="hint" id="h"></div>
   </div>
+  <style>
+    .hint {
+      margin-top: 14px;
+      font-size: 12px;
+      color: #666;
+      max-width: 460px;
+      line-height: 1.5;
+    }
+  </style>
   <script>
     // Poll the embedded sidecar until /api/health responds, then redirect
     // the WebView to the live UI. Tauri's setup hook spawns the Next.js
-    // standalone server on this same loopback port; we don't know exactly
-    // when it has bound, so probe with a backoff. Falls back to showing
-    // an error message after ~30s so a busy port or crashed sidecar is
-    // visible instead of an infinite spinner.
+    // standalone server on this same loopback port. Probe with a short
+    // backoff and surface progressive diagnostics so a stuck splash is
+    // actionable rather than a silent freeze.
     const PORT = window.__UNFCK_PORT__ || 3457;
     const target = `http://127.0.0.1:${PORT}/`;
     const start = Date.now();
+    const $s = document.getElementById('s');
+    const $h = document.getElementById('h');
+    const $e = document.getElementById('e');
 
     async function probe() {
       try {
@@ -79,12 +91,22 @@
       } catch (_) { /* server not up yet */ }
 
       const elapsed = Date.now() - start;
-      if (elapsed > 30000) {
-        document.getElementById('s').textContent = 'Local server did not start.';
-        document.getElementById('e').textContent =
-          'The Next.js sidecar failed to bind to port ' + PORT + '. ' +
-          'Check the Tauri log (View > Developer Tools) or run `npm run dev` ' +
-          'manually to inspect the failure.';
+      if (elapsed > 5000 && elapsed < 15000) {
+        $s.textContent = 'Booting Node sidecar…';
+        $h.textContent = 'First start takes a few extra seconds while the bundled Node parses node_modules.';
+      } else if (elapsed > 15000 && elapsed < 60000) {
+        $s.textContent = 'Still trying to reach the local server…';
+        $h.textContent =
+          'If this hangs longer than a minute, press F12 to open DevTools — Console + Network tabs show what fetch returns. ' +
+          'Sidecar logs land in the Tauri app-log directory (%LOCALAPPDATA%/com.unfck.bandcamp/logs/ on Windows).';
+      } else if (elapsed >= 60000) {
+        $s.textContent = 'Local server did not start.';
+        $e.textContent =
+          'The bundled Node sidecar failed to bind to port ' + PORT + ' within 60s. ' +
+          'Press F12 → Console for browser-side errors, or open the app log folder to inspect the sidecar stdout.';
+        $h.textContent =
+          'Common causes: port ' + PORT + ' already in use by another tool, antivirus blocking node.exe, ' +
+          'or a missing native module in the bundled node_modules tree.';
         return;
       }
       setTimeout(probe, 500);

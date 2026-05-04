@@ -700,6 +700,28 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
 
       <PreferencesEditor />
       <ShortcutsEditor />
+      {tauriRuntime && (
+        <section className="rounded-lg border border-border bg-bg-surface p-6">
+          <h2 className="text-xl font-semibold">App window</h2>
+          <p className="mt-2 text-sm text-fg-secondary">
+            By default the app runs inside its own desktop window. If you
+            prefer the standard browser experience (Tabs, Bookmarks, F12
+            DevTools), open the local server in your default browser. The
+            desktop window stays open as the host of the local server —
+            don&rsquo;t close it, or the browser tab will lose its
+            backend.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              window.open(`${window.location.origin}/`, '_blank', 'noopener');
+            }}
+            className="mt-3 rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+          >
+            ↗ Open in default browser
+          </button>
+        </section>
+      )}
       <DiagnosticsPanel />
       <DatabaseInspector />
     </div>
