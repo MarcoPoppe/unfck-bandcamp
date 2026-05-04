@@ -132,9 +132,27 @@ mod commands {
 }
 
 mod sidecar {
+    use std::path::{Path, PathBuf};
     use tauri::{AppHandle, Manager};
     use tauri_plugin_shell::process::CommandEvent;
     use tauri_plugin_shell::ShellExt;
+
+    /// Tauri's resource_dir() returns Windows extended-length paths like
+    /// `\\?\C:\Users\…`. Node accepts those as command-line args but
+    /// some legacy code paths and child processes don't, so we strip
+    /// the verbatim prefix back to a plain `C:\Users\…` form.
+    fn strip_extended_prefix(p: &Path) -> PathBuf {
+        let s = p.to_string_lossy();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            // UNC paths under verbatim prefix look like \\?\UNC\server\share —
+            // turn back into \\server\share.
+            if let Some(unc) = rest.strip_prefix("UNC\\") {
+                return PathBuf::from(format!(r"\\{}", unc));
+            }
+            return PathBuf::from(rest);
+        }
+        p.to_path_buf()
+    }
 
     /// Default loopback port for the embedded Next.js server. Matches the
     /// `npm run dev` script so a developer who runs `tauri dev` sees the
@@ -146,12 +164,17 @@ mod sidecar {
         // Tauri exposes the resolved app-resource path; the
         // `.next/standalone` tree was registered as a bundle resource in
         // tauri.conf.json so it lives under `<resource_dir>/_up_/.next/standalone`.
-        let resource_dir = app.path().resource_dir()?;
-        let server_js = resource_dir
+        // Tauri returns extended-length paths (\\?\C:\...) on Windows.
+        // Node tolerates them as args but server.js's internal relative
+        // requires get confused if CWD also stays in the verbatim form.
+        // Strip the prefix so we hand Node plain Win32 paths.
+        let resource_dir_raw = app.path().resource_dir()?;
+        let resource_dir = strip_extended_prefix(&resource_dir_raw);
+        let standalone_dir = resource_dir
             .join("_up_")
             .join(".next")
-            .join("standalone")
-            .join("server.js");
+            .join("standalone");
+        let server_js = standalone_dir.join("server.js");
 
         // Per-user data dir for the SQLite database, audio cache, logs.
         // The Next.js process reads $DATABASE_PATH (the existing
@@ -177,13 +200,17 @@ mod sidecar {
         // (named `node-<TARGET_TRIPLE>` in src-tauri/binaries/) at
         // runtime and spawns it. No PATH-Node needed on the user's
         // machine — Marco's friends just install + click + go.
-        let server_js_str = server_js.to_string_lossy().to_string();
         let db_path_str = data_dir.join("unfck.db").to_string_lossy().to_string();
         let data_dir_str = data_dir.to_string_lossy().to_string();
+        // CWD must be the standalone tree itself: server.js does
+        // `require('./.next/server/...')` style relative loads, which
+        // only resolve correctly when Node is running with that
+        // directory as its working directory.
         let (mut rx, _child) = app
             .shell()
             .sidecar("node")?
-            .args([&server_js_str])
+            .args(["server.js"])
+            .current_dir(standalone_dir.clone())
             .env("PORT", PORT.to_string())
             .env("HOSTNAME", "127.0.0.1")
             .env("DATABASE_PATH", db_path_str)
