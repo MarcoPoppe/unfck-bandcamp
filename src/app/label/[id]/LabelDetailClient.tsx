@@ -213,9 +213,9 @@ export default function LabelDetailClient({ label, activity, groups }: Props) {
             {visibleGroups.map((g, gi) => (
               <li
                 key={`${gi}-${g.bcAlbumId ?? g.albumTitle ?? 'group'}`}
-                className="rounded-lg border border-border bg-bg-surface p-2"
+                className="rounded-lg border border-border bg-bg-surface transition-colors hover:bg-bg-hover"
               >
-                <div className="flex items-center gap-3 p-1">
+                <div className="flex items-center gap-3 p-3">
                   {g.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img

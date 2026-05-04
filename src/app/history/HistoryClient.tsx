@@ -86,7 +86,7 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
     const rowPlaying = rowIsCurrent && isPlaying;
     return (
       <div
-        className={`flex items-center gap-3 rounded border px-3 py-2 ${
+        className={`flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-bg-hover ${
           rowIsCurrent ? 'border-accent/40 bg-bg-elevated' : 'border-border bg-bg-surface'
         }`}
       >
@@ -119,9 +119,9 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
               >
                 {p.coverUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.coverUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                  <img src={p.coverUrl} alt="" className="h-12 w-12 rounded object-cover" />
                 ) : (
-                  <div className="h-10 w-10 rounded bg-bg-elevated" />
+                  <div className="h-12 w-12 rounded bg-bg-elevated" />
                 )}
               </a>
               <div className="min-w-0 flex-1">

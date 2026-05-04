@@ -364,7 +364,7 @@ export default function ArtistDetailClient({
           <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-fg-muted">
             Releases on Bandcamp · {releases.length}
           </h2>
-          <div className="overflow-hidden rounded-lg border border-border">
+          <div className="space-y-2">
             {releases.map((r) => {
               const key =
                 r.bcUrl ?? `id:${r.releaseType}:${r.bcItemId}`;
@@ -497,8 +497,8 @@ function ReleaseRow({
   }
 
   return (
-    <div className="border-b border-border last:border-b-0">
-      <div className="flex items-center gap-2 px-3 py-2 hover:bg-bg-hover">
+    <div className="overflow-hidden rounded-lg border border-border bg-bg-surface transition-colors hover:bg-bg-hover">
+      <div className="flex items-center gap-3 p-3">
         <button
           type="button"
           onClick={expand}
