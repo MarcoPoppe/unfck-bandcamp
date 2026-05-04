@@ -119,7 +119,7 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
               >
                 {p.coverUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.coverUrl} alt="" className="h-10 w-10 rounded object-cover" />
+                  <img src={p.coverUrl} alt="" className="h-10 w-10 rounded object-cover" loading="lazy" />
                 ) : (
                   <div className="h-10 w-10 rounded bg-bg-elevated" />
                 )}

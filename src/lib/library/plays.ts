@@ -305,31 +305,37 @@ export function getAlbumPlayedStatsByUrl(): Map<string, { played: number; total:
   return map;
 }
 
+/**
+ * List play-history rows joined with track metadata. Pass `limit = 0` (or
+ * Number.POSITIVE_INFINITY) to get every play ever recorded — Virtuoso
+ * on the client side virtualises the DOM so ~10k rows render fine.
+ */
 export function listRecentPlays(limit = 100): PlayHistoryEntry[] {
-  const rows = getDb()
-    .prepare<[number], {
-      id: number;
-      track_id: number;
-      played_at: string;
-      completed_pct: number | null;
-      source: string | null;
-      title: string;
-      artist_name: string | null;
-      album_title: string | null;
-      cover_url: string | null;
-      bc_url: string;
-      bc_track_id: number;
-      stream_url: string | null;
-      duration_seconds: number | null;
-    }>(
-      `SELECT tp.id, tp.track_id, tp.played_at, tp.completed_pct, tp.source,
+  const unlimited = !Number.isFinite(limit) || limit <= 0;
+  type Row = {
+    id: number;
+    track_id: number;
+    played_at: string;
+    completed_pct: number | null;
+    source: string | null;
+    title: string;
+    artist_name: string | null;
+    album_title: string | null;
+    cover_url: string | null;
+    bc_url: string;
+    bc_track_id: number;
+    stream_url: string | null;
+    duration_seconds: number | null;
+  };
+  const baseSql = `SELECT tp.id, tp.track_id, tp.played_at, tp.completed_pct, tp.source,
               t.title, t.artist_name, t.album_title, t.cover_url, t.bc_url,
               t.bc_track_id, t.stream_url, t.duration_seconds
          FROM track_plays tp INNER JOIN tracks t ON t.id = tp.track_id
          WHERE t.removed_at IS NULL
-         ORDER BY tp.played_at DESC LIMIT ?`,
-    )
-    .all(limit);
+         ORDER BY tp.played_at DESC`;
+  const rows = unlimited
+    ? getDb().prepare<[], Row>(baseSql).all()
+    : getDb().prepare<[number], Row>(`${baseSql} LIMIT ?`).all(limit);
   return rows.map((r) => ({
     id: r.id,
     trackId: r.track_id,
