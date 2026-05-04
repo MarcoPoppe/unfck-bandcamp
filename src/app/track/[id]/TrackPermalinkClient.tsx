@@ -787,7 +787,7 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
               albumTitle={track.albumTitle}
               coverUrl={track.coverUrl}
               showFollow
-              showArchive
+              showArchive={false}
             />
             <OpenOnBandcampButton href={track.bcUrl} />
           </div>

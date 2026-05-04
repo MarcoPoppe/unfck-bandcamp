@@ -1,6 +1,6 @@
 [package]
 name = "unfck-bandcamp"
-version = "2.1.2"
+version = "2.1.3"
 description = "Self-hosted Bandcamp discovery tool with Beatport-style UI"
 authors = ["Marco Poppe"]
 license = "MIT"

@@ -30,7 +30,7 @@ export default function OpenOnBandcampButton({ href, label, size = 'md' }: Props
         target="_blank"
         rel="noreferrer"
         aria-label={label ?? 'Open on bandcamp.com'}
-        className={`inline-flex ${sizeClasses} items-center justify-center rounded-full border border-border bg-bg-elevated text-fg-secondary transition-colors hover:border-accent hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
+        className={`inline-flex ${sizeClasses} items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent`}
       >
         <svg
           width={iconSize}

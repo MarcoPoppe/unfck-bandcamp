@@ -5,6 +5,7 @@ import { getTrackPermalink, lookupTrack } from '@/lib/track/lookup';
 import { getPlayedBcTrackIds } from '@/lib/library/plays';
 import { logger } from '@/lib/log';
 import TrackPermalinkClient from './TrackPermalinkClient';
+import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -71,21 +72,16 @@ export default async function TrackPermalinkPage({
             {lookupError}
           </p>
         )}
-        <div className="mt-6 flex gap-2">
-          <a
-            href={`https://bandcamp.com/?show_track_id=${bcTrackId}`}
-            target="_blank"
-            rel="noreferrer"
-            className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover"
-          >
-            Open on bandcamp.com
-          </a>
+        <div className="mt-6 flex items-center gap-2">
           <a
             href="/discover"
             className="rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
           >
             Back to Discover
           </a>
+          <OpenOnBandcampButton
+            href={`https://bandcamp.com/?show_track_id=${bcTrackId}`}
+          />
         </div>
       </main>
     );

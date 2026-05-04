@@ -538,14 +538,6 @@ function WishlistRow({
         showFollow
         showArchive
       />
-      <a
-        href={item.bcUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="rounded border border-border bg-bg-base px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-accent hover:text-accent"
-      >
-        ↗ BC
-      </a>
     </div>
   );
 }
