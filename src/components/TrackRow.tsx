@@ -172,22 +172,22 @@ export default function TrackRow({
   // Wishlist row Marco picked as the visual reference (play 36px, cover
   // 48px, p-3 padding).
   const mobileParts: string[] = [];
-  if (hasPreLeading) mobileParts.push('36px');
-  mobileParts.push('36px'); // play
-  if (hasMidLeading) mobileParts.push('36px');
-  mobileParts.push(isCompact ? '36px' : '48px'); // cover / position
+  if (hasPreLeading) mobileParts.push('32px');
+  mobileParts.push('32px'); // play
+  if (hasMidLeading) mobileParts.push('32px');
+  mobileParts.push(isCompact ? '32px' : '40px'); // cover / position
   mobileParts.push('minmax(0,1fr)'); // title
   if (!isAlbumRow) mobileParts.push('auto'); // actions
   if (trailing) mobileParts.push('auto');
 
   const smParts: string[] = [];
-  if (hasPreLeading) smParts.push('36px');
-  smParts.push('36px'); // play
-  if (hasMidLeading) smParts.push('36px');
-  smParts.push(isCompact ? '36px' : '48px');
+  if (hasPreLeading) smParts.push('32px');
+  smParts.push('32px'); // play
+  if (hasMidLeading) smParts.push('32px');
+  smParts.push(isCompact ? '32px' : '40px');
   smParts.push('minmax(0,1fr)');
-  if (!hideAlbumColumn && !isCompact) smParts.push('minmax(0,180px)');
-  if (!hideDuration && !isCompact) smParts.push('60px');
+  if (!hideAlbumColumn && !isCompact) smParts.push('minmax(0,160px)');
+  if (!hideDuration && !isCompact) smParts.push('48px');
   if (!isAlbumRow) smParts.push('auto');
   if (trailing) smParts.push('auto');
 
@@ -201,7 +201,7 @@ export default function TrackRow({
       }`}
     >
       <div
-        className={`group grid items-center gap-3 p-3 [grid-template-columns:var(--cols-mobile)] sm:[grid-template-columns:var(--cols-sm)] ${
+        className={`group grid items-center gap-2 p-2 [grid-template-columns:var(--cols-mobile)] sm:gap-3 sm:px-3 sm:[grid-template-columns:var(--cols-sm)] ${
           isCurrent ? 'bg-bg-elevated' : ''
         }`}
         style={
@@ -248,7 +248,7 @@ export default function TrackRow({
               && !track.albumExpand
               && !track.bcUrl
             }
-            className={`flex h-9 w-9 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
+            className={`flex h-8 w-8 items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
               isCurrent
                 ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
                 : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
@@ -256,11 +256,11 @@ export default function TrackRow({
             aria-label={isPlaying ? 'Pause' : 'Play'}
           >
             {isPlaying ? (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M6 4h4v16H6zM14 4h4v16h-4z" />
               </svg>
             ) : (
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M8 5v14l11-7z" />
               </svg>
             )}
@@ -307,7 +307,7 @@ export default function TrackRow({
 
         {/* Cover or compact-position column */}
         {isCompact ? (
-          <div className="flex h-10 w-10 items-center justify-center font-mono text-sm tabular-nums text-fg-muted">
+          <div className="flex h-8 w-8 items-center justify-center font-mono text-xs tabular-nums text-fg-muted">
             {position ?? track.trackNumber ?? ''}
           </div>
         ) : track.bcTrackId ? (
@@ -321,11 +321,11 @@ export default function TrackRow({
               <img
                 src={track.coverUrl}
                 alt=""
-                className="h-12 w-12 rounded object-cover"
+                className="h-10 w-10 rounded object-cover"
                 loading="lazy"
               />
             ) : (
-              <div className="h-12 w-12 rounded bg-bg-elevated" />
+              <div className="h-10 w-10 rounded bg-bg-elevated" />
             )}
           </Link>
         ) : track.coverUrl ? (
@@ -333,17 +333,17 @@ export default function TrackRow({
           <img
             src={track.coverUrl}
             alt=""
-            className="h-12 w-12 rounded object-cover"
+            className="h-10 w-10 rounded object-cover"
             loading="lazy"
           />
         ) : (
-          <div className="h-12 w-12 rounded bg-bg-elevated" />
+          <div className="h-10 w-10 rounded bg-bg-elevated" />
         )}
 
         {/* Title block */}
         <div className="min-w-0">
           <div
-            className={`flex items-center gap-2 truncate text-base font-semibold ${
+            className={`flex items-center gap-2 truncate text-sm font-semibold ${
               isCurrent ? 'text-accent' : 'text-fg-primary'
             }`}
           >
@@ -388,7 +388,7 @@ export default function TrackRow({
               on label · released 2024. Each segment is its own clickable
               element, separated by a thin dot. Keeps the row at 2 lines
               total (title + meta) so the card stays compact. */}
-          <div className="flex items-center gap-1.5 truncate text-sm text-fg-secondary">
+          <div className="flex items-center gap-1.5 truncate text-xs text-fg-secondary">
             {track.artistName ? (
               track.bcUrl ? (
                 <a
@@ -453,7 +453,7 @@ export default function TrackRow({
 
         {/* Album column (sm+ only) */}
         {!isCompact && !hideAlbumColumn && (
-          <div className="hidden truncate text-sm text-fg-muted sm:block">
+          <div className="hidden truncate text-xs text-fg-muted sm:block">
             {track.albumTitle ?? ''}
           </div>
         )}

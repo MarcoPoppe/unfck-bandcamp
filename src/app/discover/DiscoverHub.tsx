@@ -657,8 +657,11 @@ function TracksTab({
                   type="button"
                   onClick={() => markSeen([...selected])}
                   disabled={bulkBusy}
-                  className="rounded border border-border bg-bg-elevated px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded border border-border bg-bg-elevated px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
                 >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M18 6 6 18M6 6l12 12" />
+                  </svg>
                   Mark seen
                 </button>
               </>
@@ -1457,8 +1460,11 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
                     type="button"
                     onClick={() => markSeen([...selected])}
                     disabled={bulkBusy}
-                    className="rounded border border-border bg-bg-elevated px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded border border-border bg-bg-elevated px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
                   >
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
                     Mark seen
                   </button>
                   <button

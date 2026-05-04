@@ -86,7 +86,7 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
     const rowPlaying = rowIsCurrent && isPlaying;
     return (
       <div
-        className={`flex items-center gap-3 rounded-lg border p-3 transition-colors hover:bg-bg-hover ${
+        className={`flex items-center gap-2 rounded-lg border p-2 transition-colors hover:bg-bg-hover sm:gap-3 sm:px-3 ${
           rowIsCurrent ? 'border-accent/40 bg-bg-elevated' : 'border-border bg-bg-surface'
         }`}
       >
@@ -96,7 +96,7 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
                 disabled={!p.hasStream}
                 title={rowPlaying ? 'Pause' : 'Play'}
                 aria-label={rowPlaying ? 'Pause' : 'Play'}
-                className={`flex h-9 w-9 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
+                className={`flex h-8 w-8 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-30 ${
                   rowIsCurrent
                     ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
                     : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
@@ -119,9 +119,9 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
               >
                 {p.coverUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={p.coverUrl} alt="" className="h-12 w-12 rounded object-cover" />
+                  <img src={p.coverUrl} alt="" className="h-10 w-10 rounded object-cover" />
                 ) : (
-                  <div className="h-12 w-12 rounded bg-bg-elevated" />
+                  <div className="h-10 w-10 rounded bg-bg-elevated" />
                 )}
               </a>
               <div className="min-w-0 flex-1">

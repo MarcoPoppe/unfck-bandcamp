@@ -498,7 +498,7 @@ function ReleaseRow({
 
   return (
     <div className="overflow-hidden rounded-lg border border-border bg-bg-surface transition-colors hover:bg-bg-hover">
-      <div className="flex items-center gap-3 p-3">
+      <div className="flex items-center gap-2 p-2 sm:gap-3 sm:px-3">
         <button
           type="button"
           onClick={expand}

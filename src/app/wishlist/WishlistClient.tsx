@@ -431,7 +431,7 @@ function WishlistRow({
   const playable = !isResolving;
   return (
     <div
-      className={`flex items-center gap-3 rounded-lg border p-3 transition-colors ${
+      className={`flex items-center gap-2 rounded-lg border p-2 transition-colors sm:gap-3 sm:px-3 ${
         selected
           ? 'border-accent bg-bg-elevated'
           : isCurrent
@@ -460,7 +460,7 @@ function WishlistRow({
                 : 'Play'
         }
         aria-label={isPlaying ? 'Pause' : 'Play'}
-        className={`flex h-9 w-9 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
+        className={`flex h-8 w-8 flex-none items-center justify-center rounded-full border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${
           isCurrent
             ? 'border-accent bg-accent text-fg-on-accent hover:bg-accent-hover'
             : 'border-border text-fg-secondary hover:border-accent hover:text-accent'
@@ -495,16 +495,16 @@ function WishlistRow({
       >
         {item.coverUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.coverUrl} alt="" className="h-12 w-12 rounded object-cover" />
+          <img src={item.coverUrl} alt="" className="h-10 w-10 rounded object-cover" />
         ) : (
-          <div className="h-12 w-12 rounded bg-bg-elevated" />
+          <div className="h-10 w-10 rounded bg-bg-elevated" />
         )}
       </a>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <a
             href={`/track/${item.bcTrackId}`}
-            className="flex items-center gap-2 truncate font-medium hover:underline"
+            className="flex items-center gap-2 truncate text-sm font-semibold hover:underline"
             title="Open track page"
           >
             {(item.hasBeenPlayed || hasBeenPlayedLive) && (

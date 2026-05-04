@@ -215,16 +215,16 @@ export default function LabelDetailClient({ label, activity, groups }: Props) {
                 key={`${gi}-${g.bcAlbumId ?? g.albumTitle ?? 'group'}`}
                 className="rounded-lg border border-border bg-bg-surface transition-colors hover:bg-bg-hover"
               >
-                <div className="flex items-center gap-3 p-3">
+                <div className="flex items-center gap-2 p-2 sm:gap-3 sm:px-3">
                   {g.coverUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={g.coverUrl}
                       alt=""
-                      className="h-12 w-12 flex-none rounded object-cover"
+                      className="h-10 w-10 flex-none rounded object-cover"
                     />
                   ) : (
-                    <div className="h-12 w-12 flex-none rounded bg-bg-elevated" />
+                    <div className="h-10 w-10 flex-none rounded bg-bg-elevated" />
                   )}
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-sm font-medium">
