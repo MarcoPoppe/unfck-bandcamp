@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import StickyPlayerBar from '@/components/StickyPlayerBar';
+import TrackListSearch from '@/components/TrackListSearch';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
 import type { PlaylistTrack } from '@/lib/library/playlists';
@@ -15,7 +16,19 @@ interface Props {
 export default function PlaylistDetailClient({ playlistId, initialTracks }: Props) {
   const [tracks, setTracks] = useState<PlaylistTrack[]>(initialTracks);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
   const setQueue = usePlayerStore((s) => s.setQueue);
+
+  const filteredTracks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return tracks;
+    return tracks.filter((t) =>
+      `${t.title} ${t.artistName ?? ''} ${t.albumTitle ?? ''}`
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [tracks, search]);
+  const isFiltered = search.trim().length > 0;
 
   useGlobalPlaybackShortcuts();
 
@@ -85,8 +98,21 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
 
   return (
     <>
+      <TrackListSearch
+        value={search}
+        onChange={setSearch}
+        total={tracks.length}
+        visible={filteredTracks.length}
+      />
+      {filteredTracks.length === 0 && isFiltered && (
+        <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-6 text-center text-sm text-fg-muted">
+          No tracks match &quot;{search}&quot;.
+        </p>
+      )}
       <div className="space-y-2">
-        {tracks.map((t, idx) => (
+        {filteredTracks.map((t) => {
+          const idx = tracks.findIndex((x) => x.trackId === t.trackId);
+          return (
           <TrackRow
             key={t.trackId}
             track={{
@@ -107,8 +133,8 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
             reorderControls={{
               onMoveUp: () => move(t.trackId, -1),
               onMoveDown: () => move(t.trackId, 1),
-              canMoveUp: !busy && idx > 0,
-              canMoveDown: !busy && idx < tracks.length - 1,
+              canMoveUp: !busy && !isFiltered && idx > 0,
+              canMoveDown: !busy && !isFiltered && idx < tracks.length - 1,
             }}
             hideDuration
             showFollow
@@ -124,7 +150,8 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
               </button>
             }
           />
-        ))}
+          );
+        })}
       </div>
       <StickyPlayerBar />
     </>

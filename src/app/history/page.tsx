@@ -1,4 +1,4 @@
-import { getPlayedBcTrackIds, listRecentPlays } from '@/lib/library/plays';
+import { getPlayedBcTrackIds, listPlaysAggregated } from '@/lib/library/plays';
 import { getPlaylistMembershipForTrackIds } from '@/lib/library/playlists';
 import { getStoredAuth } from '@/lib/auth/store';
 import HistoryClient from './HistoryClient';
@@ -22,25 +22,25 @@ export default function HistoryPage() {
     );
   }
   const played = getPlayedBcTrackIds();
-  // 0 = unlimited. Virtuoso on the client side virtualises the DOM so
-  // 10k+ rows render fine; loading them all in one shot keeps the page
-  // simple (no pagination/cursor) and matches Marco's mental model:
-  // "everything I have ever played should be here, the DB has it."
-  const all = listRecentPlays(0);
+  // Aggregate by track: one row per track with play_count, last-played
+  // timestamp, best completion. Marco: "doppelte Eintraege aggregieren."
+  const all = listPlaysAggregated();
   const playlistMap = getPlaylistMembershipForTrackIds(all.map((p) => p.trackId));
   const plays = all.map((p) => ({
     ...p,
     hasBeenPlayed: played.has(p.bcTrackId),
     playlists: playlistMap.get(p.trackId) ?? [],
   }));
+  const totalPlays = plays.reduce((sum, p) => sum + p.playCount, 0);
   return (
     <main className="mx-auto max-w-4xl px-4 pb-32 pt-8">
       <header className="mb-6">
         <h1 className="text-3xl font-bold tracking-tight">History</h1>
         <p className="text-fg-secondary">
-          {plays.length.toLocaleString('de-DE')} plays total. Every track you listened to for
-          at least a second shows up here. The bar shows how much of the track played before
-          you skipped or it ended.
+          {plays.length.toLocaleString('de-DE')} unique tracks ·{' '}
+          {totalPlays.toLocaleString('de-DE')} plays total. Every track you listened to for at
+          least a second shows up here. The bar shows the best completion you reached on this
+          track across all plays.
         </p>
       </header>
       <HistoryClient plays={plays} />

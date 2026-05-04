@@ -7,6 +7,7 @@ import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import StickyPlayerBar from '@/components/StickyPlayerBar';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import Tooltip from '@/components/Tooltip';
+import TrackListSearch from '@/components/TrackListSearch';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
 import type { ArtistRow, DiggerRow, LabelRow } from '@/lib/entities/store';
@@ -494,7 +495,9 @@ function TracksTab({
     setQueue(queue);
   }, [queue, setQueue]);
 
+  const [search, setSearch] = useState('');
   const visibleQueue = useMemo(() => {
+    const q = search.trim().toLowerCase();
     return queue.filter((t) => {
       if (seenTracks.has(t.id)) return false;
       if (
@@ -503,9 +506,14 @@ function TracksTab({
       ) {
         return false;
       }
+      if (q) {
+        const haystack =
+          `${t.title} ${t.artistName ?? ''} ${t.albumTitle ?? ''}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [queue, prefs.hidePlayed, playedBcTrackIds, seenTracks]);
+  }, [queue, prefs.hidePlayed, playedBcTrackIds, seenTracks, search]);
   const hiddenCount = queue.length - visibleQueue.length;
 
   function toggleSelected(id: number) {
@@ -624,11 +632,19 @@ function TracksTab({
           </div>
         </div>
       )}
+      <TrackListSearch
+        value={search}
+        onChange={setSearch}
+        total={queue.length}
+        visible={visibleQueue.length}
+      />
       {visibleQueue.length === 0 ? (
         <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
-          {seenTracks.size > 0
-            ? `All ${queue.length} discovered tracks marked as seen or already heard. Refresh discovery to pull more.`
-            : `All ${queue.length} discovered tracks already heard. Toggle "Hide played" off to show them again.`}
+          {search.trim()
+            ? `No tracks match "${search}".`
+            : seenTracks.size > 0
+              ? `All ${queue.length} discovered tracks marked as seen or already heard. Refresh discovery to pull more.`
+              : `All ${queue.length} discovered tracks already heard. Toggle "Hide played" off to show them again.`}
         </p>
       ) : (
         <>

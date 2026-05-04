@@ -8,6 +8,7 @@ import HidePlayedToggle from '@/components/HidePlayedToggle';
 import PlayedCheck from '@/components/PlayedCheck';
 import PlaylistMembershipBadge from '@/components/PlaylistMembershipBadge';
 import type { TrackRowData } from '@/components/TrackRow';
+import TrackListSearch from '@/components/TrackListSearch';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts, useCurationShortcuts } from '@/lib/store/hooks';
 import { usePreferences } from '@/lib/settings/preferences';
@@ -198,12 +199,24 @@ export default function WishlistClient({
   const isPlaying = usePlayerStore((s) => s.isPlaying);
   const playedBcTrackIds = usePlayerStore((s) => s.playedBcTrackIds);
   const [prefs] = usePreferences();
+  const [search, setSearch] = useState('');
   const filteredVisible = useMemo(() => {
-    if (!prefs.hidePlayed) return visible;
-    return visible.filter(
-      (i) => !(i.hasBeenPlayed || playedBcTrackIds.has(i.bcTrackId)),
-    );
-  }, [visible, prefs.hidePlayed, playedBcTrackIds]);
+    let v = visible;
+    if (prefs.hidePlayed) {
+      v = v.filter(
+        (i) => !(i.hasBeenPlayed || playedBcTrackIds.has(i.bcTrackId)),
+      );
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      v = v.filter((i) =>
+        `${i.title} ${i.artistName ?? ''} ${i.albumTitle ?? ''}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    return v;
+  }, [visible, prefs.hidePlayed, playedBcTrackIds, search]);
   const hiddenWishlistCount = visible.length - filteredVisible.length;
   useGlobalPlaybackShortcuts();
   useCurationShortcuts();
@@ -338,12 +351,23 @@ export default function WishlistClient({
               <p>No dismissed items.</p>
             )}
           </div>
-        ) : filteredVisible.length === 0 ? (
-          <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
-            All {visible.length} items already heard. Toggle &ldquo;Hide
-            played&rdquo; off to show them again.
-          </p>
-        ) : filteredVisible.length > 200 ? (
+        ) : (
+          <>
+            <TrackListSearch
+              value={search}
+              onChange={setSearch}
+              total={visible.length}
+              visible={filteredVisible.length}
+              unitLabel="item"
+              unitLabelPlural="items"
+            />
+            {filteredVisible.length === 0 ? (
+              <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
+                {search.trim()
+                  ? `No items match "${search}".`
+                  : `All ${visible.length} items already heard. Toggle "Hide played" off to show them again.`}
+              </p>
+            ) : filteredVisible.length > 200 ? (
           <Virtuoso
             useWindowScroll
             totalCount={filteredVisible.length}
@@ -377,28 +401,32 @@ export default function WishlistClient({
             }}
           />
         ) : (
-          filteredVisible.map((item) => (
-            <WishlistRow
-              key={item.id}
-              item={item}
-              selected={selected.has(item.id)}
-              onToggle={() => toggleSelected(item.id)}
-              isCurrent={
-                (item.localTrackId != null && currentId === item.localTrackId) ||
-                (item.bcTrackId != null && currentId === -item.bcTrackId)
-              }
-              isPlaying={
-                ((item.localTrackId != null && currentId === item.localTrackId) ||
-                  (item.bcTrackId != null && currentId === -item.bcTrackId)) &&
-                isPlaying
-              }
-              isResolving={false}
-              onPlay={() => playItem(item)}
-              hasBeenPlayedLive={
-                item.bcTrackId != null && playedBcTrackIds.has(item.bcTrackId)
-              }
-            />
-          ))
+          <div className="space-y-2">
+            {filteredVisible.map((item) => (
+              <WishlistRow
+                key={item.id}
+                item={item}
+                selected={selected.has(item.id)}
+                onToggle={() => toggleSelected(item.id)}
+                isCurrent={
+                  (item.localTrackId != null && currentId === item.localTrackId) ||
+                  (item.bcTrackId != null && currentId === -item.bcTrackId)
+                }
+                isPlaying={
+                  ((item.localTrackId != null && currentId === item.localTrackId) ||
+                    (item.bcTrackId != null && currentId === -item.bcTrackId)) &&
+                  isPlaying
+                }
+                isResolving={false}
+                onPlay={() => playItem(item)}
+                hasBeenPlayedLive={
+                  item.bcTrackId != null && playedBcTrackIds.has(item.bcTrackId)
+                }
+              />
+            ))}
+          </div>
+        )}
+          </>
         )}
       </div>
       <StickyPlayerBar />

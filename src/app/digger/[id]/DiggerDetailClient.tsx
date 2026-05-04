@@ -8,6 +8,7 @@ import TrackRow from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
 import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
+import TrackListSearch from '@/components/TrackListSearch';
 import type { ActivitySnapshot } from '@/lib/library/activity';
 import { usePreferences } from '@/lib/settings/preferences';
 import type { DiggerDetail } from '@/lib/sync/diggers';
@@ -426,20 +427,32 @@ export default function DiggerDetailClient({
   // Filter the visible row list, but keep the player queue derived from
   // the full `collectionItems` so A/D walks the entire collection even
   // when the user toggled "hide played" on.
+  const [search, setSearch] = useState('');
   const visibleItems = useMemo(() => {
-    if (!prefs.hidePlayed) return collectionItems;
-    return collectionItems.filter((it) => {
-      if (it.hasBeenPlayed) return false;
-      if (it.bcItemType === 't' && playedBcTrackIds.has(it.bcItemId)) return false;
-      if (it.bcItemType === 'a') {
-        if (isAlbumFullyHeardLive(it)) return false;
-        if (prefs.hidePartialAlbums) {
-          const stats = albumPlayedCountLive(it);
-          if (stats.played > 0) return false;
+    let v = collectionItems;
+    if (prefs.hidePlayed) {
+      v = v.filter((it) => {
+        if (it.hasBeenPlayed) return false;
+        if (it.bcItemType === 't' && playedBcTrackIds.has(it.bcItemId)) return false;
+        if (it.bcItemType === 'a') {
+          if (isAlbumFullyHeardLive(it)) return false;
+          if (prefs.hidePartialAlbums) {
+            const stats = albumPlayedCountLive(it);
+            if (stats.played > 0) return false;
+          }
         }
-      }
-      return true;
-    });
+        return true;
+      });
+    }
+    const q = search.trim().toLowerCase();
+    if (q) {
+      v = v.filter((it) =>
+        `${it.title} ${it.artistName ?? ''} ${it.labelName ?? ''}`
+          .toLowerCase()
+          .includes(q),
+      );
+    }
+    return v;
     // isAlbumFullyHeardLive + albumPlayedCountLive depend on
     // albumTracksCache + playerQueue + playedBcTrackIds; all listed below
     // so the memo recomputes when they change.
@@ -451,6 +464,7 @@ export default function DiggerDetailClient({
     playedBcTrackIds,
     albumTracksCache,
     playerQueue,
+    search,
   ]);
   const hiddenItemCount = collectionItems.length - visibleItems.length;
 
@@ -777,6 +791,16 @@ export default function DiggerDetailClient({
             <div className="mb-3 rounded border border-border bg-bg-surface p-2 text-xs text-fg-secondary">
               {crawlMessage}
             </div>
+          )}
+          {collectionItems.length > 0 && (
+            <TrackListSearch
+              value={search}
+              onChange={setSearch}
+              total={collectionItems.length}
+              visible={visibleItems.length}
+              unitLabel="item"
+              unitLabelPlural="items"
+            />
           )}
           {collectionItems.length === 0 ? (
             <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">

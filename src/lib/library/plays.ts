@@ -352,3 +352,75 @@ export function listRecentPlays(limit = 100): PlayHistoryEntry[] {
     durationSeconds: r.duration_seconds,
   }));
 }
+
+export interface AggregatedPlayEntry {
+  /** Pseudo id (track_id) so React keys stay stable. */
+  id: number;
+  trackId: number;
+  /** Most recent played_at across all plays of this track. */
+  lastPlayedAt: string;
+  /** Total number of recorded plays. */
+  playCount: number;
+  /** Highest completion percentage (0..1) achieved across plays. */
+  bestCompletedPct: number | null;
+  title: string;
+  artistName: string | null;
+  albumTitle: string | null;
+  coverUrl: string | null;
+  bcUrl: string;
+  bcTrackId: number;
+  hasStream: boolean;
+  durationSeconds: number | null;
+}
+
+/**
+ * One row per track, aggregating all play events: total play count,
+ * most recent play timestamp, best completion percentage. Removes the
+ * duplicates that show up in listRecentPlays when the user has played
+ * the same track multiple times.
+ */
+export function listPlaysAggregated(): AggregatedPlayEntry[] {
+  type Row = {
+    track_id: number;
+    last_played_at: string;
+    play_count: number;
+    best_completed_pct: number | null;
+    title: string;
+    artist_name: string | null;
+    album_title: string | null;
+    cover_url: string | null;
+    bc_url: string;
+    bc_track_id: number;
+    stream_url: string | null;
+    duration_seconds: number | null;
+  };
+  const rows = getDb()
+    .prepare<[], Row>(
+      `SELECT tp.track_id,
+              MAX(tp.played_at) AS last_played_at,
+              COUNT(*) AS play_count,
+              MAX(tp.completed_pct) AS best_completed_pct,
+              t.title, t.artist_name, t.album_title, t.cover_url, t.bc_url,
+              t.bc_track_id, t.stream_url, t.duration_seconds
+         FROM track_plays tp INNER JOIN tracks t ON t.id = tp.track_id
+         WHERE t.removed_at IS NULL
+         GROUP BY tp.track_id
+         ORDER BY last_played_at DESC`,
+    )
+    .all();
+  return rows.map((r) => ({
+    id: r.track_id,
+    trackId: r.track_id,
+    lastPlayedAt: r.last_played_at,
+    playCount: r.play_count,
+    bestCompletedPct: r.best_completed_pct,
+    title: r.title,
+    artistName: r.artist_name,
+    albumTitle: r.album_title,
+    coverUrl: r.cover_url,
+    bcUrl: r.bc_url,
+    bcTrackId: r.bc_track_id,
+    hasStream: r.stream_url !== null,
+    durationSeconds: r.duration_seconds,
+  }));
+}
