@@ -7,6 +7,7 @@ import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackRow from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
+import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 import type { ActivitySnapshot } from '@/lib/library/activity';
 import { usePreferences } from '@/lib/settings/preferences';
 import type { DiggerDetail } from '@/lib/sync/diggers';
@@ -539,16 +540,15 @@ export default function DiggerDetailClient({
         title={isExpanded ? 'Hide tracks' : 'Show tracks of this album'}
         aria-label={isExpanded ? 'Collapse album tracks' : 'Expand album tracks'}
         aria-expanded={isExpanded}
-        className="flex h-9 flex-none items-center gap-1 rounded border border-border bg-bg-elevated px-2 text-xs text-fg-secondary transition-colors hover:border-accent hover:text-fg-primary disabled:opacity-50"
+        className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-border bg-bg-elevated text-fg-secondary transition-colors hover:border-accent hover:text-accent disabled:opacity-50"
       >
-        <span>{isExpanded ? 'Hide tracks' : 'Tracks'}</span>
         <svg
-          width="12"
-          height="12"
+          width="20"
+          height="20"
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
-          strokeWidth="2"
+          strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
           className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -601,7 +601,7 @@ export default function DiggerDetailClient({
         titleHref={`/track/go?url=${encodeURIComponent(it.bcUrl)}`}
         badges={badges}
         showFollow
-        showArchive
+        showArchive={false}
         hideAlbumColumn
         hideDuration
         onPlayOverride={onPlayOverride}
@@ -696,6 +696,10 @@ export default function DiggerDetailClient({
                 ↗ Website
               </a>
             )}
+            <OpenOnBandcampButton
+              href={`https://bandcamp.com/${detail.bcUsername}`}
+              label="Open curator on bandcamp.com"
+            />
           </div>
           {/* Stats row: separate band, smaller weight than identity. */}
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
@@ -790,14 +794,15 @@ export default function DiggerDetailClient({
               useWindowScroll
               totalCount={visibleItems.length}
               overscan={400}
-              className="overflow-hidden rounded-lg border border-border"
               computeItemKey={(index) =>
                 `${visibleItems[index].bcItemType}-${visibleItems[index].bcItemId}`
               }
-              itemContent={(index) => renderCollectionItem(visibleItems[index])}
+              itemContent={(index) => (
+                <div className="pb-2">{renderCollectionItem(visibleItems[index])}</div>
+              )}
             />
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className="space-y-2">
               {visibleItems.map((it) => (
                 <div key={`${it.bcItemType}-${it.bcItemId}`}>
                   {renderCollectionItem(it)}
@@ -946,7 +951,7 @@ function AlbumTrackCompactRow({
       variant="compact"
       position={track.trackNumber}
       showFollow
-      showArchive
+      showArchive={false}
       onPlayOverride={play}
     />
   );

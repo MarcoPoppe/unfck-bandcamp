@@ -6,6 +6,7 @@ import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
+import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
 import { loadPreferences, usePreferences } from '@/lib/settings/preferences';
@@ -318,14 +319,10 @@ export default function ArtistDetailClient({
                 Follow
               </button>
             )}
-            <a
+            <OpenOnBandcampButton
               href={artist.bcUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded-full border border-border bg-bg-elevated px-3 py-2 text-sm transition-colors hover:bg-bg-hover"
-            >
-              ↗ Bandcamp
-            </a>
+              label="Open artist on bandcamp.com"
+            />
           </div>
           {message && (
             <div className="mt-3 rounded border border-border bg-bg-surface p-3 text-sm text-fg-secondary">
@@ -353,7 +350,7 @@ export default function ArtistDetailClient({
               All {queue.length} tracks of this artist already heard.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className="space-y-2">
               {visibleQueue.map((t) => (
                 <TrackRow key={t.id} track={t} />
               ))}
@@ -583,6 +580,7 @@ function ReleaseRow({
                     key={t.trackId}
                     track={row}
                     onPlayOverride={() => playTrack(t)}
+                    showArchive={false}
                   />
                 );
               })}

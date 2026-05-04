@@ -7,6 +7,7 @@ import TrackActionsBar from '@/components/TrackActionsBar';
 import FollowButton from '@/components/FollowButton';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import PlayedCheck from '@/components/PlayedCheck';
+import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
 import { loadPreferences, usePreferences } from '@/lib/settings/preferences';
@@ -181,14 +182,10 @@ export default function LabelDetailClient({ label, activity, groups }: Props) {
             >
               {followBusy ? '…' : followed ? '✓ Following' : '+ Follow label'}
             </button>
-            <a
+            <OpenOnBandcampButton
               href={label.bcUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded border border-border bg-bg-elevated px-3 py-2 text-sm transition-colors hover:bg-bg-hover"
-            >
-              ↗ Open on Bandcamp
-            </a>
+              label="Open label on bandcamp.com"
+            />
           </div>
           <p className="mt-3 text-xs text-fg-muted">
             {groups.length} releases · {groups.reduce((n, g) => n + g.tracks.length, 0)} tracks in your library

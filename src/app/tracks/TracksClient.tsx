@@ -307,7 +307,7 @@ export default function TracksClient({
             ) : visibleTracks.length > 200 ? (
               // Virtualized list: only render rows currently in view + a small
               // overscan window. Keeps the DOM at ~30 rows even with 10k+ tracks.
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="space-y-2">
                 <Virtuoso
                   useWindowScroll
                   totalCount={visibleTracks.length}
@@ -328,7 +328,7 @@ export default function TracksClient({
                 />
               </div>
             ) : (
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="space-y-2">
                 {visibleTracks.map((t) => (
                   <TrackRow
                     key={t.id}

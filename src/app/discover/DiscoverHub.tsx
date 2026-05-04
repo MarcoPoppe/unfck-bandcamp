@@ -664,7 +664,7 @@ function TracksTab({
               </>
             )}
           </div>
-          <div className="overflow-hidden rounded-lg border border-border">
+          <div className="space-y-2">
             {visibleQueue.map((t) => (
               <TrackRow
                 key={t.id}

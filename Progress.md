@@ -1,7 +1,19 @@
 # Unfck Bandcamp
 
-**Version:** 2.0.1 (siehe `package.json`) — erste installierbare Tauri-Release mit funktionierendem Auto-Updater.
-**Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/tag/v2.0.1
+**Version:** 2.1.0 (siehe `package.json`) — UI-Sweep nach Marco-Feedback (Card-Look, Checkbox-vor-Play, BC-Link-Konsolidierung, EP-Row minimal, Per-Page-Action-Bar).
+**Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/tag/v2.1.0
+
+## Phase AK — UI-Sweep (v2.1.0)
+
+Nach Marco-Feedback auf v2.0.1:
+
+- **Card-Look**: Jede `<TrackRow>` ist jetzt eine eigene `rounded-lg border bg-bg-surface` Card. Container-Wrapper überall auf `space-y-2` umgestellt (Library, History, Wishlist-API-Renderer behalten ihre eigenen Container, Discover, Curator, Playlist, Track-Permalink-Geschwister, Artist-BC-Releases). Die alte `overflow-hidden rounded-lg border` durchgehende Liste ist weg.
+- **Checkbox vor Play**: `selectable`-Slot in TrackRow rendert die Checkbox jetzt LINKS vom Play-Button (Wishlist-Pattern), nicht mehr im leading-Slot zwischen Play und Cover.
+- **BC-Link rausgenommen** aus jeder TrackRow (das `showBcLink`-Prop ist gestrichen, das Icon weg). Stattdessen neuer `<OpenOnBandcampButton>`-Component mit konsistentem rundem Icon-Button. Eingebaut auf den 4 Detail-Page-Headers: `/track/[id]`, `/digger/[id]`, `/artist/[id]`, `/label/[id]`.
+- **EP-Row minimal**: Wenn `track.albumExpand === true`, blendet TrackRow die ganze Action-Bar aus. Übrig bleibt nur der Trailing-Slot mit dem neuen großen runden Pfeil-Toggle (statt "Tracks ▾"-Text-Button). Heart/Playlist auf ganze EP ist als Feature in Memory geparkt (`project_unfck_bandcamp_ep_actions_idea`).
+- **Archive-Auto-Hide**: TrackRow setzt `showArchive` intern auf false wenn `track.id < 0` ODER `source === 'discovered'`. Caller können explizit `showArchive={false}` setzen — gemacht für Curator-Detail (Track + Album + Sub-Track), Track-Permalink-Geschwister, Artist-BC-Releases. Begründung: Archive ist nur für eigene Library-Tracks sinnvoll.
+
+Build: tsc --noEmit clean, next build clean.
 
 **Status:** Phase AJ durch — Tauri-Distribution + Auto-Updater verkabelt. TrackRow-Unification (Phase AI, v1.45.0) bleibt eingerollt. Tauri-Wrapper mit Sidecar-Pattern (Rust spawnt Next.js standalone server auf 127.0.0.1:3457), Updater-Plugin auf GitHub-Releases-latest.json mit ed25519-signed manifests, GitHub Actions Release-Pipeline für Win/macOS-arm64/macOS-x86_64/Linux. Setup-Wizard zeigt "Sign in with Bandcamp"-Buttons unter Tauri (Embedded-Login Rust-Backend ist scaffolded mit Polling-Loop, Cookie-Extraction-API noch zu vervollständigen — Wizard fällt graceful auf Cookie-Paste zurück). Code-Signing übersprungen (out of scope laut Spec). Phase 5 Friend-Test übersprungen.
 **Repo:** `https://github.com/MarcoPoppe/unfck-bandcamp` (privat).

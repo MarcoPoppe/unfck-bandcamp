@@ -38,15 +38,13 @@ export interface TrackRowData {
   /** Discover-only: who surfaced this track ("via leonlicht"). */
   discoveredVia?: string | null;
   discoveredViaName?: string | null;
-  /** When the surfacing source is a curator, their bc_fan_id so the UI
-   * can link the "via Leon Licht" tag to /digger/[id]. */
   discoveredViaBcFanId?: number | null;
   /** True for album/EP queue entries: StickyPlayerBar fetches the tracklist
-   * on demand and replaces this entry with all tracks of the release. */
+   * on demand and replaces this entry with all tracks of the release.
+   * Album-rows render minimal: no action-bar, only the trailing
+   * tracks-expand toggle. Heart/playlist on a whole EP is parked as a
+   * future feature (see project_unfck_bandcamp_ep_actions_idea memory). */
   albumExpand?: boolean;
-  /** When set, the track originated from an expanded album/EP. UI lists
-   * use this to auto-expand the parent row when the player advances into
-   * its tracks. */
   parentBcAlbumId?: number | null;
   labelName?: string | null;
   labelId?: number | null;
@@ -54,13 +52,7 @@ export interface TrackRowData {
   bpm?: number | null;
   releasedAt?: string | null;
   playlists?: { id: number; name: string }[];
-  /** Curator-collection items remember whether they originated as a single
-   * track ("t") or an album/EP ("a"). Pages that mix both (curator detail)
-   * use this to render trailing controls like the album-expand toggle. */
   bcItemType?: 't' | 'a';
-  /** For album/EP rows: how many sub-tracks the user has played already.
-   * When played > 0 && played < total a partial dot appears in place of
-   * the full-played check. Ignored when hasBeenPlayed is already true. */
   partialPlayedFraction?: { played: number; total: number };
 }
 
@@ -84,59 +76,25 @@ export interface TrackRowBadge {
 
 interface Props {
   track: TrackRowData;
-
-  /**
-   * 'full' (default) renders cover + full metadata + album column.
-   * 'compact' renders position-number instead of cover, drops album+duration,
-   * used inside expanded album tracklists.
-   */
   variant?: 'full' | 'compact';
-
-  /** 1-indexed position. In 'compact' it replaces the cover image. */
   position?: number | null;
-
-  /** Up/down arrows in the leading slot. Used by playlist detail. */
   reorderControls?: ReorderControls;
-
-  /** Checkbox in the leading slot. Used by Discover multi-select tabs. */
   selectable?: SelectableConfig;
-
-  /** Slot rendered to the right of the action bar. Album-expand toggle,
-   * remove button, etc. */
   trailing?: ReactNode;
-
-  /** Region rendered full-width below the row. Used to render expanded
-   * album-tracklists under a curator-collection album row. */
   expandedContent?: ReactNode;
 
-  /** Action-bar gating. All default to true except where noted; set false
-   * to hide. Wishlist visibility is implicit in bcTrackId (no toggle). */
+  /** Action-bar gating. Defaults: Wishlist + Playlist + Follow are on,
+   * Archive is on but auto-suppressed for non-library entries (see
+   * `effectiveShowArchive` below). The BC external-link is always off
+   * inside a row — it only lives on detail-page headers now. */
   showPlaylist?: boolean;
   showFollow?: boolean;
   showArchive?: boolean;
-  showBcLink?: boolean;
 
-  /** Drop the album column. Curator-collection + Discover-Tracks already
-   * push album info into the title-block, so they hide the column. */
   hideAlbumColumn?: boolean;
-  /** Drop the duration column. Playlists hide it, curator-collection
-   * inlines it differently. */
   hideDuration?: boolean;
-
-  /** Override the title link target. Default `/track/[bcTrackId]`.
-   * Curator items pass `/track/go?url=…` so the resolver runs on click. */
   titleHref?: string;
-
-  /** Pills next to the title. Curator-collection uses this for "You own this". */
   badges?: TrackRowBadge[];
-
-  /**
-   * Optional override for the play button. When set, the row calls this
-   * instead of `toggle(track.id)`. Used when the row sits inside a
-   * release-tracklist that needs to swap the player queue to the album's
-   * own tracks before toggling, instead of using whatever queue the page
-   * shell pre-set.
-   */
   onPlayOverride?: () => void;
 }
 
@@ -148,8 +106,6 @@ function formatDuration(seconds: number | null): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-/** dd.mm.yyyy if the date parses, raw string otherwise. Compact enough
- * to fit the row's metadata stack alongside artist + label. */
 function formatReleasedShort(s: string): string {
   const ts = Date.parse(s);
   if (!Number.isFinite(ts)) return s;
@@ -177,7 +133,6 @@ export default function TrackRow({
   showPlaylist = true,
   showFollow = true,
   showArchive = true,
-  showBcLink = true,
   hideAlbumColumn = false,
   hideDuration = false,
   titleHref,
@@ -193,41 +148,59 @@ export default function TrackRow({
   const showPlayed = track.hasBeenPlayed === true || hasBeenPlayedLive;
 
   const isCompact = variant === 'compact';
-  const hasLeading = !!selectable || !!reorderControls || (position != null && !isCompact);
+  const isAlbumRow = track.albumExpand === true;
+  // Selectable always sits to the LEFT of the play button (matches the
+  // Wishlist pattern Marco picked as the reference). Reorder arrows and
+  // position numbers stay between play and cover.
+  const hasPreLeading = !!selectable;
+  const hasMidLeading = !!reorderControls || (position != null && !isCompact && !reorderControls);
 
-  // Default title link target.
+  // Archive is implicitly suppressed for synthetic / discovered rows,
+  // because there is no library row to mark archived. The caller can
+  // still pass showArchive=false explicitly to suppress it elsewhere
+  // (e.g. curator-collection where archive is irrelevant for foreign
+  // tracks per Marco's spec). Net visibility:
+  const isInLibrary = track.source === 'owned' && track.id > 0;
+  const effectiveShowArchive = showArchive && isInLibrary;
+
   const resolvedTitleHref =
     titleHref ?? (track.bcTrackId ? `/track/${track.bcTrackId}` : null);
 
-  // Grid template — cells collapse when their slot is empty. Mobile drops
-  // the album + duration columns so the row stays readable; sm+ shows them.
-  // We pass both templates as CSS variables and switch via a Tailwind
-  // breakpoint class — that's the only way to combine dynamic templates
-  // with responsive breakpoints.
-  const mobileParts: string[] = ['40px'];
-  if (hasLeading) mobileParts.push('40px');
-  mobileParts.push(isCompact ? '40px' : '48px');
-  mobileParts.push('minmax(0,1fr)');
-  mobileParts.push('auto');
+  // Grid template: [pre?] [play] [mid?] [cover-or-pos] [title] [album?]
+  // [duration?] [actions?] [trailing?]. Album-rows skip the action slot
+  // entirely. Mobile drops album+duration columns.
+  const mobileParts: string[] = [];
+  if (hasPreLeading) mobileParts.push('40px');
+  mobileParts.push('40px'); // play
+  if (hasMidLeading) mobileParts.push('40px');
+  mobileParts.push(isCompact ? '40px' : '48px'); // cover / position
+  mobileParts.push('minmax(0,1fr)'); // title
+  if (!isAlbumRow) mobileParts.push('auto'); // actions
   if (trailing) mobileParts.push('auto');
 
-  const smParts: string[] = ['44px'];
-  if (hasLeading) smParts.push('40px');
+  const smParts: string[] = [];
+  if (hasPreLeading) smParts.push('40px');
+  smParts.push('44px'); // play
+  if (hasMidLeading) smParts.push('40px');
   smParts.push(isCompact ? '40px' : '56px');
   smParts.push('minmax(0,1fr)');
   if (!hideAlbumColumn && !isCompact) smParts.push('minmax(0,180px)');
   if (!hideDuration && !isCompact) smParts.push('60px');
-  smParts.push('auto');
+  if (!isAlbumRow) smParts.push('auto');
   if (trailing) smParts.push('auto');
 
   const mobileTemplate = mobileParts.join(' ');
   const smTemplate = smParts.join(' ');
 
   return (
-    <div className="border-b border-border">
+    <div
+      className={`overflow-hidden rounded-lg border border-border bg-bg-surface transition-colors hover:bg-bg-hover ${
+        isCurrent ? 'ring-1 ring-accent' : ''
+      }`}
+    >
       <div
-        className={`group grid items-center gap-2 px-2 py-3 transition-colors hover:bg-bg-hover [grid-template-columns:var(--cols-mobile)] sm:gap-3 sm:px-4 sm:[grid-template-columns:var(--cols-sm)] ${
-          isCurrent ? 'bg-bg-elevated' : 'bg-bg-surface'
+        className={`group grid items-center gap-2 px-2 py-3 [grid-template-columns:var(--cols-mobile)] sm:gap-3 sm:px-4 sm:[grid-template-columns:var(--cols-sm)] ${
+          isCurrent ? 'bg-bg-elevated' : ''
         }`}
         style={
           {
@@ -236,11 +209,28 @@ export default function TrackRow({
           } as CSSProperties
         }
       >
-        {/* Play button — always col 1 */}
+        {/* Pre-play leading slot (selectable). Sits left of the play
+            button so the checkbox is the first thing the eye lands on
+            in multi-select contexts. */}
+        {hasPreLeading && selectable && (
+          <div className="flex h-full items-center justify-center">
+            <input
+              type="checkbox"
+              checked={selectable.selected}
+              onChange={selectable.onToggle}
+              aria-label={selectable.label ?? 'Select track'}
+              className="h-4 w-4 cursor-pointer accent-accent"
+            />
+          </div>
+        )}
+
+        {/* Play button */}
         <Tooltip
           text={
             !track.hasStream && (track.needsResolve || track.albumExpand || track.bcUrl)
-              ? 'Resolves on play (one BC roundtrip)'
+              ? isAlbumRow
+                ? 'Play (loads tracks first)'
+                : 'Resolves on play (one BC roundtrip)'
               : isPlaying
                 ? 'Pause (Space)'
                 : 'Play (Space)'
@@ -275,18 +265,12 @@ export default function TrackRow({
           </button>
         </Tooltip>
 
-        {/* Leading slot */}
-        {hasLeading && (
+        {/* Mid leading slot — reorder arrows or position number, between
+            play and cover. Only one wins; selectable already lives in
+            the pre-leading slot. */}
+        {hasMidLeading && (
           <div className="flex h-full items-center justify-center">
-            {selectable ? (
-              <input
-                type="checkbox"
-                checked={selectable.selected}
-                onChange={selectable.onToggle}
-                aria-label={selectable.label ?? 'Select track'}
-                className="h-4 w-4 cursor-pointer accent-accent"
-              />
-            ) : reorderControls ? (
+            {reorderControls ? (
               <div className="flex flex-col items-center gap-0.5">
                 <button
                   type="button"
@@ -319,7 +303,7 @@ export default function TrackRow({
           </div>
         )}
 
-        {/* Cover or position-number column */}
+        {/* Cover or compact-position column */}
         {isCompact ? (
           <div className="flex h-10 w-10 items-center justify-center font-mono text-sm tabular-nums text-fg-muted">
             {position ?? track.trackNumber ?? ''}
@@ -449,65 +433,53 @@ export default function TrackRow({
           )}
         </div>
 
-        {/* Album column (sm+ only, hidden when hideAlbumColumn or compact) */}
+        {/* Album column (sm+ only) */}
         {!isCompact && !hideAlbumColumn && (
           <div className="hidden truncate text-sm text-fg-muted sm:block">
             {track.albumTitle ?? ''}
           </div>
         )}
 
-        {/* Duration (sm+ only, hidden when hideDuration or compact) */}
+        {/* Duration (sm+ only) */}
         {!isCompact && !hideDuration && (
           <div className="hidden text-right font-mono text-xs text-fg-muted tabular-nums sm:block">
             {formatDuration(track.durationSeconds)}
           </div>
         )}
 
-        {/* Action bar — delegated to TrackActionsBar so the lazy-resolve
-            flow (curator items not yet imported) works uniformly. The BC
-            external-link button stays here, outside the action bar. */}
-        <div className="flex items-center justify-end gap-1.5">
-          <TrackActionsBar
-            bcUrl={track.bcUrl}
-            bcTrackId={track.bcTrackId ?? null}
-            localTrackId={
-              track.source === 'discovered' || track.id < 0 ? null : track.id
-            }
-            title={track.title}
-            artistName={track.artistName}
-            albumTitle={track.albumTitle}
-            coverUrl={track.coverUrl}
-            initialRating={track.rating ?? 0}
-            initialArchived={!!track.archivedAt}
-            showPlaylist={showPlaylist && track.source !== 'discovered'}
-            showFollow={showFollow}
-            showArchive={showArchive && track.source !== 'discovered'}
-            labelBcUrl={track.labelBcUrl ?? null}
-          />
-          {showBcLink && (
-            <Tooltip text="Open on bandcamp.com" position="top">
-              <a
-                href={track.bcUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                aria-label="Open on bandcamp.com"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M14 3h7v7M10 14L21 3M21 14v7H3V3h7" />
-                </svg>
-              </a>
-            </Tooltip>
-          )}
-        </div>
+        {/* Action bar — suppressed for album/EP rows. The BC external-
+            link icon is gone; it only lives on detail-page headers now. */}
+        {!isAlbumRow && (
+          <div className="flex items-center justify-end gap-1.5">
+            <TrackActionsBar
+              bcUrl={track.bcUrl}
+              bcTrackId={track.bcTrackId ?? null}
+              localTrackId={
+                track.source === 'discovered' || track.id < 0 ? null : track.id
+              }
+              title={track.title}
+              artistName={track.artistName}
+              albumTitle={track.albumTitle}
+              coverUrl={track.coverUrl}
+              initialRating={track.rating ?? 0}
+              initialArchived={!!track.archivedAt}
+              showPlaylist={showPlaylist && track.source !== 'discovered'}
+              showFollow={showFollow}
+              showArchive={effectiveShowArchive}
+              labelBcUrl={track.labelBcUrl ?? null}
+            />
+          </div>
+        )}
 
-        {/* Trailing slot */}
+        {/* Trailing slot (album-expand toggle, remove button, etc.) */}
         {trailing && (
           <div className="flex items-center justify-end">{trailing}</div>
         )}
       </div>
 
-      {/* Expanded content full-width below the row */}
+      {/* Expanded content — sits inside the same card so the visual
+          grouping holds. Used to render expanded album tracklists under
+          a curator-collection album row. */}
       {expandedContent && (
         <div className="border-t border-border bg-bg-elevated/40">
           {expandedContent}

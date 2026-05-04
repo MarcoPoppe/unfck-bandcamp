@@ -196,7 +196,7 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
           )}
         />
       ) : (
-        <div className="space-y-1">
+        <div className="space-y-2">
           {plays.map((p) => (
             <div key={p.id}>{renderRow(p)}</div>
           ))}

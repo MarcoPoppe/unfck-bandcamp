@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackActionsBar from '@/components/TrackActionsBar';
+import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import PlayedCheck from '@/components/PlayedCheck';
 import { usePreferences } from '@/lib/settings/preferences';
@@ -788,14 +789,7 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
               showFollow
               showArchive
             />
-            <a
-              href={track.bcUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="rounded border border-border bg-bg-elevated px-3 py-2 text-sm transition-colors hover:bg-bg-hover"
-            >
-              ↗ Open on Bandcamp
-            </a>
+            <OpenOnBandcampButton href={track.bcUrl} />
           </div>
           {!track.streamAvailable && (
             <p className="mt-3 text-xs text-fg-muted">
@@ -818,7 +812,7 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
               All {siblings.length} tracks of this release already heard.
             </p>
           ) : (
-            <div className="overflow-hidden rounded-lg border border-border">
+            <div className="space-y-2">
               {visibleSiblings.map((s) => (
                 <TrackRow
                   key={s.id}
@@ -836,6 +830,7 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
                     hasBeenPlayed: s.hasBeenPlayed,
                     source: 'owned' as const,
                   }}
+                  showArchive={false}
                 />
               ))}
             </div>

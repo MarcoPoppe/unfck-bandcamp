@@ -85,7 +85,7 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
 
   return (
     <>
-      <div className="overflow-hidden rounded-lg border border-border">
+      <div className="space-y-2">
         {tracks.map((t, idx) => (
           <TrackRow
             key={t.trackId}
