@@ -1,6 +1,6 @@
 # Unfck Bandcamp
 
-**Version:** 2.4.7 (siehe `package.json`)
+**Version:** 2.4.8 (siehe `package.json`)
 **Status:** Tauri-Installer läuft Ende-zu-Ende. v2.4.3-2.4.5 waren eine Bug-Kaskade (Node-ABI, CORS, Asset-Bundling). v2.4.6 ist der erste Build wo die App vollständig rennt: gestylt, hydriert, Library-Sync 38 items. Sammelt Folge-UX-Fixes nach Marcos erstem Test (Username-Anzeige, Curators-API-URL, neues Logo, Update-Button).
 **Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/latest
 **Repo:** https://github.com/MarcoPoppe/unfck-bandcamp (public seit 2026-05-04, GH-Actions sind damit unlimited gratis).
