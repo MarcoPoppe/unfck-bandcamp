@@ -182,7 +182,7 @@ export default function AppShell({
     (async () => {
       try {
         const mod = await import(
-          /* webpackIgnore: true */ '@tauri-apps/api/window'
+          '@tauri-apps/api/window'
         );
         const win = mod.getCurrentWindow();
         unlisten = await win.onCloseRequested(async (event) => {

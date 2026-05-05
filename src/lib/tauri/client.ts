@@ -73,7 +73,7 @@ export async function checkForAppUpdate(): Promise<UpdateInfo | null> {
   if (!isTauri()) return null;
   try {
     const mod = await import(
-      /* webpackIgnore: true */ '@tauri-apps/plugin-updater'
+      '@tauri-apps/plugin-updater'
     );
     const update = await mod.check();
     if (!update) return null;
@@ -95,7 +95,7 @@ export async function applyAppUpdate(): Promise<void> {
     /* webpackIgnore: true */ '@tauri-apps/plugin-updater'
   );
   const procMod = await import(
-    /* webpackIgnore: true */ '@tauri-apps/plugin-process'
+    '@tauri-apps/plugin-process'
   );
   const update = await updMod.check();
   if (!update) return;
