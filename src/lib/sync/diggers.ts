@@ -1,5 +1,5 @@
 import { getDb } from '../db';
-import { getStoredAuth } from '../auth/store';
+import { getStoredAuth, getStoredMainAuth } from '../auth/store';
 import { fetchCollectorsPage } from '../bandcamp/fetch_collectors';
 import { upsertDigger } from '../entities/store';
 import { recordSyncError } from './errors_store';
@@ -128,7 +128,12 @@ export async function syncDiggers(opts?: {
   }
   const errors: DiggerCrawlResult['errors'] = [];
   const aggregate = new Map<number, DiggerAggregate>();
-  const ownFanId = opts?.ownFanId ?? auth.fanId;
+  // Self-exclude: skip the user's own fan_id from the supporters list,
+  // otherwise the linked main account dominates the overlap chart with
+  // 100% match (it owns every release we scan). Prefer main when
+  // linked — the burner is a fresh throwaway and never appears in
+  // other tralbums' supporters anyway.
+  const ownFanId = opts?.ownFanId ?? getStoredMainAuth()?.fanId ?? auth.fanId;
   let collectorsSeen = 0;
 
   for (let i = 0; i < items.length; i += 1) {
