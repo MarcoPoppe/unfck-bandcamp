@@ -1,214 +1,99 @@
 # Unfck Bandcamp
 
-**Version:** 2.1.0 (siehe `package.json`) — UI-Sweep nach Marco-Feedback (Card-Look, Checkbox-vor-Play, BC-Link-Konsolidierung, EP-Row minimal, Per-Page-Action-Bar).
-**Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/tag/v2.1.0
-
-## Phase AK — UI-Sweep (v2.1.0)
-
-Nach Marco-Feedback auf v2.0.1:
-
-- **Card-Look**: Jede `<TrackRow>` ist jetzt eine eigene `rounded-lg border bg-bg-surface` Card. Container-Wrapper überall auf `space-y-2` umgestellt (Library, History, Wishlist-API-Renderer behalten ihre eigenen Container, Discover, Curator, Playlist, Track-Permalink-Geschwister, Artist-BC-Releases). Die alte `overflow-hidden rounded-lg border` durchgehende Liste ist weg.
-- **Checkbox vor Play**: `selectable`-Slot in TrackRow rendert die Checkbox jetzt LINKS vom Play-Button (Wishlist-Pattern), nicht mehr im leading-Slot zwischen Play und Cover.
-- **BC-Link rausgenommen** aus jeder TrackRow (das `showBcLink`-Prop ist gestrichen, das Icon weg). Stattdessen neuer `<OpenOnBandcampButton>`-Component mit konsistentem rundem Icon-Button. Eingebaut auf den 4 Detail-Page-Headers: `/track/[id]`, `/digger/[id]`, `/artist/[id]`, `/label/[id]`.
-- **EP-Row minimal**: Wenn `track.albumExpand === true`, blendet TrackRow die ganze Action-Bar aus. Übrig bleibt nur der Trailing-Slot mit dem neuen großen runden Pfeil-Toggle (statt "Tracks ▾"-Text-Button). Heart/Playlist auf ganze EP ist als Feature in Memory geparkt (`project_unfck_bandcamp_ep_actions_idea`).
-- **Archive-Auto-Hide**: TrackRow setzt `showArchive` intern auf false wenn `track.id < 0` ODER `source === 'discovered'`. Caller können explizit `showArchive={false}` setzen — gemacht für Curator-Detail (Track + Album + Sub-Track), Track-Permalink-Geschwister, Artist-BC-Releases. Begründung: Archive ist nur für eigene Library-Tracks sinnvoll.
-
-Build: tsc --noEmit clean, next build clean.
-
-**Status:** Phase AJ durch — Tauri-Distribution + Auto-Updater verkabelt. TrackRow-Unification (Phase AI, v1.45.0) bleibt eingerollt. Tauri-Wrapper mit Sidecar-Pattern (Rust spawnt Next.js standalone server auf 127.0.0.1:3457), Updater-Plugin auf GitHub-Releases-latest.json mit ed25519-signed manifests, GitHub Actions Release-Pipeline für Win/macOS-arm64/macOS-x86_64/Linux. Setup-Wizard zeigt "Sign in with Bandcamp"-Buttons unter Tauri (Embedded-Login Rust-Backend ist scaffolded mit Polling-Loop, Cookie-Extraction-API noch zu vervollständigen — Wizard fällt graceful auf Cookie-Paste zurück). Code-Signing übersprungen (out of scope laut Spec). Phase 5 Friend-Test übersprungen.
-**Repo:** `https://github.com/MarcoPoppe/unfck-bandcamp` (privat).
-**Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose oder `npm run dev` bleibt Option für Power-User.
+**Version:** 2.4.4 (siehe `package.json`)
+**Status:** Tauri-Installer mit gebundeltem Node, alle UI-Polish-Loops von v2.1.x abgearbeitet, History aggregiert + Search überall, /setup hat Browser-Button. **v2.4.3 hatte zwei Bugs: better-sqlite3 NODE_MODULE_VERSION-Mismatch (CI Node 20 vs gebundelter Node 22) und CORS zwischen tauri.localhost und 127.0.0.1:3457.** v2.4.4 fixt beides + Stale-Sidecar-Schutz.
+**Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/latest
+**Repo:** https://github.com/MarcoPoppe/unfck-bandcamp (public seit 2026-05-04, GH-Actions sind damit unlimited gratis).
+**Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose / `npm run dev` bleibt Option für Power-User.
 
 ## Stack
 
 - Next.js 16.2.4 (App Router) + TypeScript strict + Tailwind 3
 - better-sqlite3 12.9.0 (WAL mode, IMMEDIATE-Tx, instrumentation hook auto-migrates)
-- cheerio 1.0.0 (HTML parsing)
-- zustand 5.0.1 (Player-Store + Live-Played + Wishlist + Playlist-Membership Sets)
-- wavesurfer.js 7.8.6 (48px Waveform im Beatport-Style Sticky-Player)
-- realtime-bpm-analyzer 5.0.12 (installiert, Live-Detection rolled back; Offline-Detection via AudioContext aktiv)
-- react-virtuoso 4.18.6 (Virtualisierung Library 200+ / Curator-Collection 500+)
-- yt-dlp 2026.03.17 (sha256-pinned, im Docker-Image)
-- ffmpeg im Docker-Image fuer yt-dlp Audio-Format-Konvertierung
+- cheerio 1.0.0, zustand 5.0.1, wavesurfer.js 7.8.6, react-virtuoso 4.18.6
+- realtime-bpm-analyzer 5.0.12 (Offline-Detection via AudioContext)
+- yt-dlp 2026.03.17 (sha256-pinned)
+- **Tauri 2.11** + plugin-updater + plugin-shell + plugin-log + plugin-process
+- ed25519-signed updates über GitHub Releases
+- Node 22.11.0 als externalBin im Bundle
 
-## Routen / Module
+## Seiten / Module
 
 | Pfad | Status | Zweck |
 |---|---|---|
-| `/` | done | Home-Dashboard mit 6 Stat-Cards, Sync-Health, Recently-Played, Datum dd.mm.yyyy hh:mm |
-| `/setup` | done | 2-Step-Wizard (Burner + Your account), DiagnosticsPanel mit Copy-Button, Sync-Section mit Library + Follow-Imports |
-| `/tracks` | done | Library mit Search/Sort/Archived/Lookup, TrackRow |
-| `/discover` | done | 4 Tabs: New tracks (Multi-Select+Mark-as-played) / Follows (Multi-Select+Bulk-Unfollow) / Curators (Multi-Select+Mark-Seen+Hide-already-followed) / Lookup |
-| `/wishlist` | done | Open/Bought/Dismissed mit Multi-Select, Auto-Mark via collection_items, dd.mm.yyyy-Datum |
-| `/playlists`, `/playlists/[id]` | done | Hand-curated set lists mit Reorder-Pfeile (Migration auf TrackRow geplant) |
-| `/tags` | hidden | Route lebt, aus UI raus (Marco-Wunsch); DB+API stehen, Revival möglich |
-| `/labels`, `/label/[id]` | done | Label-Index + Label-Detail-Page mit Releases gruppiert |
-| `/history` | done | Letzte 200 Plays mit dd.mm.yyyy hh:mm-Datum |
-| `/track/[bcTrackId]` | done | Track-Permalink mit on-demand released_at-Refill, Custom-Error-Page bei Lookup-Fail |
-| `/artist/[bcBandId]` | done | Artist-Detail mit Library-Owned + BC-Releases inline-aufklappbar |
-| `/digger/[bcFanId]` | done | Curator-Profil (DIGGER-Badge → CURATOR), kompakt-zentrierter Header (Migration auf TrackRow geplant) |
+| `/` | done | Home-Dashboard mit 6 Stat-Cards, Sync-Health, Recently-Played |
+| `/setup` | done | 2-Step-Wizard (Burner + Your account), Diagnostics, Sync, App-window-Section mit Browser-Button (ab v2.4.2) |
+| `/tracks` | done | Library mit Search/Sort/Archived/Lookup, TrackRow filigree |
+| `/discover` | done | 4 Tabs (New / Follows / Curators / Lookup) mit Multi-Select, Search, X-Symbol an Mark-seen |
+| `/wishlist` | done | Open/Bought/Dismissed mit Multi-Select, Search, Auto-Mark-as-Bought |
+| `/playlists`, `/playlists/[id]` | done | Hand-curated Setlists mit Reorder + Search (Reorder disabled wenn Search aktiv) |
+| `/labels`, `/label/[id]` | done | Label-Index + Label-Detail mit Releases gruppiert, Card-Look |
+| `/history` | done | **Alle Plays ever**, aggregiert pro Track mit `play_count`-Badge, best Completion, Search |
+| `/track/[bcTrackId]` | done | Track-Permalink mit 2-Stage-Lookup (bcUrl-Fallback aus discovered_tracks/wishlist), Custom-Error-Page |
+| `/artist/[bcBandId]` | done | Artist-Detail mit Library-Owned + BC-Releases inline-aufklappbar, ReleaseRow als Card |
+| `/digger/[bcFanId]` | done | Curator-Profil mit Search, EP-aufklappbar (großer Pfeil-Toggle), Sub-Tracks compact |
 | `/u/[username]` | done | Anonymes BC-User-Profil |
-| `/api/health` | done | Version aus package.json + uptime |
-| `/api/diagnostics` | done | Aggregated state-snapshot mit redacted cookies |
-| `/api/auth/{validate,suggest,status,logout,avatar}` | done | role-aware (crawler/main); suggest gated by env var |
-| `/api/sync/{owned,tracks,discovery,diggers,follows}` | done | crawler-cookies durchgehend; per-item errors persisted |
-| `/api/audio/stream` | done | Range-aware Audio-Proxy + Cache |
-| `/api/{follow,wishlist,tags,playlists,plays,discover,tracks}` | done | CRUD-APIs |
-| `/api/playlists?as=memberships` | done | Live track→playlists map for AppShell hydration |
-| `/api/track/lookup`, `/api/track/[id]/{supporters,best-of,by-local/[id]/artist,bpm}` | done | Lookup, supporters, best-of crawl |
+| `/api/...` | done | Health, Diagnostics, Auth (validate/suggest/status/logout/avatar), Sync (owned/tracks/discovery/diggers/follows), Audio-Stream, CRUD, Lookup |
 
-## Datenmodell (18 Migrations)
+## Architektur-Kerne (relevant für neue Sessions)
 
-| Migration | Inhalt |
-|---|---|
-| 1-16 | (siehe vorherige Phasen-Logs) |
-| 17 | phase_af_auth_split — auth-Tabelle mit role (crawler/main) + crawl_target_username |
-| 18 | phase_ag_sync_errors_and_staging — sync_errors Tabelle, digger_collection.staged_run_at |
+- **Single Source of Truth Tracklist:** `<TrackRow>` (Phase AI). Slot-API: `variant`, `position`, `reorderControls`, `selectable`, `trailing`, `expandedContent`, `badges`, `titleHref`, `hideAlbumColumn`, `hideDuration`, `partialPlayedFraction`. Action-Bar via `<TrackActionsBar>` mit Lazy-Resolve für nicht-importierte Curator-Items.
+- **Filigree-Werte (v2.1.6+):** `p-2` padding, `h-8 w-8` Play, `h-10 w-10` Cover, `text-sm` Title, `text-xs` Meta, `gap-2/sm:gap-3`, `rounded-lg border bg-bg-surface`. Alle Renderer (TrackRow, Wishlist, History, Label, Artist-ReleaseRow) auf gleiche Werte.
+- **Auth-Split (Phase AF, Mig 17):** auth-Tabelle role-tagged (crawler/main).
+- **Stage-and-Swap im digger_collection-Crawl** (Mig 18, staged_run_at).
+- **Tauri-Sidecar-Pattern (Phase AJ):** Im Release-Build spawnt Rust einen Node-Sidecar (`server.js` mit `PORT=3457`, `DATABASE_PATH=<app_data>/data/unfck.db`). Node ist als `externalBin` im Bundle (Naming `node-<TARGET_TRIPLE>[.exe]`). Im Debug-Mode läuft `npm run dev` als beforeDevCommand, Sidecar-Spawn übersprungen.
+- **Auto-Updater:** ed25519-signed manifests, Endpoint `releases/latest/download/latest.json`. UpdaterBanner React-Component polled bei Mount + 24h.
+- **Search-Pattern (v2.3.0+):** `<TrackListSearch>` Component, clientseitig filtern auf title+artist+album, eingebaut auf History/Wishlist/Discover/Curator/Playlist. Library hat eigene Search.
+- **Sidecar-Diagnostik (v2.4.2+):** stdout/stderr werden via `CommandEvent` in tauri-plugin-log gepumpt → app-log directory. F12-DevTools auch in Production aktiv.
 
-## Sicherheit
+## Bekannte offene Punkte
 
-- BC-Cookies AES-256-GCM verschlüsselt at rest (key in `data/.app_secret`, chmod 600)
-- 12 cookie-touching Routes loopback-guarded
-- Pre-flight cookie revalidation vor Sync
-- `/api/auth/suggest` gated by `UNFCK_ALLOW_COOKIE_SUGGEST=1` (Codex-HIGH)
-- Schema-Drift-Preflight beim App-Start (Codex-HIGH)
-- File-Logger nach `data/logs/app-YYYY-MM-DD.log` (JSON Lines)
-- Stale-Run-Reaper für sync_runs + digger_crawl_runs + best_of_supporters_runs
+- **🔴 v2.4.4 Build läuft, noch nicht getestet.** Drei Fixes: Node 22 in CI (matchen mit bundled Node 22), Splash-Probe via Tauri-IPC (CORS umgangen), Stale-Sidecar-Schutz (kein zweiter Spawn wenn Port belegt).
+- **Embedded-Login Cookie-Extraction** (Tauri-2-Webview-Cookie-API plattform-spezifisch). Aktuell Stub mit URL-Polling. Setup-Wizard fällt graceful auf Cookie-Paste zurück. Geplant für v2.5.0.
+- **UpdaterBanner UX** (v2.5.0): Fortschritts-Bar + Status-Stages („Downloading 45 %" → „Verifying" → „Installing"). Aktuell nur „Installing…"-Text ohne Fortschritt.
+- **Code-Signing** weiter übersprungen (out of scope für Friend-Test).
+- **Friend-Test noch nicht gestartet** — wartet auf v2.4.3 Selbst-Test durch Marco.
 
-## Abgeschlossene Phasen (Auszug seit v1.27.0)
+## Letzte Änderungen (Session 2026-05-04)
 
-### Auth-Split (Phase AF, v1.37.0)
+Sehr lange Session. Komplette Tauri-Distribution + viele UI-Loops.
 
-Migration 17. `auth`-Tabelle wurde role-tagged (crawler/main). Crawler-Account macht alle Reads, Main-Account ist optional und nur für Mirror-Follow zuständig. `getStoredAuth()` fällt auf main zurück bei Legacy-Setups. Setup-Wizard 2-step (Burner + Your account). Spec: `docs/specs/2026-05-03-auth-split-crawler-main.md`.
+### Tauri-Distribution + Auto-Updater (v2.0.0 → v2.0.1)
+- Plan 1+2 aus `docs/specs/` durchgezogen: TrackRow-Unification (v1.45.0) + Tauri-Bootstrap.
+- GH-Actions-Pipeline für Win/macOS-arm64/macOS-x86_64/Linux mit ed25519-Signing.
+- v2.0.1 Hotfix für `latest.json`-Generation (`createUpdaterArtifacts: true`).
 
-### Codex-HIGH-Findings (v1.38.0)
+### UI-Polish-Loops (v2.1.x)
+- v2.1.0: Card-Look, Checkbox vor Play, BC-Link rausgenommen aus TrackRow → neuer `<OpenOnBandcampButton>` auf 4 Detail-Page-Headern, EP-Row minimal, Archive-Auto-Hide.
+- v2.1.1: TrackRow-Höhe an Wishlist-Referenz angeglichen (h-9/h-12/p-3).
+- v2.1.2: History/Label/Artist-ReleaseRow ebenfalls auf gleiche Höhe gebracht (Marco's UI-Konsistenz-Regel — Memory `feedback_ui_konsistenz_alle.md`).
+- v2.1.3: Wishlist BC-Button raus, OpenOnBandcampButton ohne grauen Hintergrund, Archive auf Track-Detail-Page raus, 404-Page Open-Button als Symbol.
+- v2.1.4: Meta-Zeilen in TrackRow auf 1 Zeile mit `·`-Trennzeichen kondensiert, StickyPlayerBar Open-on-bandcamp → AddToPlaylistButton.
+- v2.1.5: Counter-Pillen weg (HidePlayedToggle + Hide-curators), `<LazyAddToPlaylistButton>` für Player-Lazy-Resolve, Track-Permalink 2-Stage-Lookup (bcUrl aus discovered_tracks/wishlist als Fallback).
+- v2.1.6: Cards filigraner überall (p-2, h-8 Play, h-10 Cover, text-sm Title, text-xs Meta), X-Symbol an Mark-seen-Buttons.
 
-- `/api/health` returnt aus package.json (war hardcoded `0.1.0`)
-- `/api/auth/suggest` gated by env var
-- File-Logger `lib/log.ts` (JSON Lines, instrumentation hook nutzt ihn)
-- Schema-Drift-Preflight `lib/db/schema_check.ts` läuft bei jedem Boot
-- `/api/diagnostics` aggregator + `<DiagnosticsPanel>` mit Copy-Button im Setup
-- `app/error.tsx` + `app/global-error.tsx` (mit humorvollem "Ups." statt Panik)
-- File-Logger nach `data/logs/`
+### History v2 (v2.2.0 → v2.3.0)
+- v2.2.0: History zeigt alle Plays ever (LIMIT 0 = unlimited), Cover lazy-loaded.
+- v2.3.0: `listPlaysAggregated()` mit GROUP BY track_id (`play_count`, `lastPlayedAt`, `bestCompletedPct`). Skipped vs Played wording vereinheitlicht. Neuer `<TrackListSearch>` Component eingebaut auf History/Wishlist/Discover/Curator/Playlist.
 
-### Per-Item-Sync-Errors persistiert (v1.39.0)
+### Tauri Distribution v2 (v2.4.0 → v2.4.4)
+- v2.4.0: Node 22.11.0 als externalBin in den Installer gebundelt — keine Vorbedingungen mehr auf User-Rechner. Bundle-Größe ~80MB. README für Friend-Test umgeschrieben.
+- v2.4.1: Splash-Screen mit echtem Logo (statt Text), App-Icons aus Wordmark-Source generiert (`tauri icon`), Cargo-Warnings cleanup, GH-Actions auf Node 24.
+- v2.4.2: Sidecar-stdout/stderr in Tauri-Log gepumpt, F12-DevTools in Production, progressive Splash-Diagnostik (5/15/60s), Browser-Button im /setup.
+- v2.4.3: Sidecar-CWD-Fix + extended-length-path-Strip. Server startete, scheiterte aber an better-sqlite3 NODE_MODULE_VERSION-Mismatch + CORS auf der Splash-Probe.
+- v2.4.4: drei Fixes nach Marco's Logs:
+  - **CI Node 20 → 22**: `npm ci` lief mit Node 20, prebuild-install zog NODE_MODULE_VERSION 115 binary. Runtime ist aber Node 22 (NODE_MODULE_VERSION 127). better-sqlite3 crashte mit ERR_DLOPEN_FAILED beim Laden im instrumentation hook → 500 auf jedem Request.
+  - **Splash auf Tauri-IPC**: `wait_for_server` Tauri-Command (Rust-side TCP-connect-Probe) statt cross-origin fetch. Vermeidet das tauri.localhost ↔ 127.0.0.1:3457 CORS-Problem ohne API-Surface zu öffnen. `withGlobalTauri: true` in tauri.conf für `window.__TAURI__.core.invoke` im Vanilla-JS-Splash.
+  - **Stale-Sidecar-Schutz**: setup() prüft `is_port_listening(3457)` vor Spawn. Vermeidet EADDRINUSE-Folgefehler wenn ein vorheriger Node-Prozess noch hängt.
 
-Migration 18. `sync_errors`-Tabelle, `recordSyncError()` helper, integriert in alle 6 Sync-Module (owned, tracks, discovery, diggers, follows_import, digger_collection, best_of_supporters). `digger_collection`-Crawl auf Stage-and-Swap umgestellt (Codex-MED). Stale-Run-Reaper auf alle 3 Run-Tabellen erweitert.
+### Repo + Workflow
+- Repo public gemacht (Marco's Bestätigung): GH-Actions sind damit unlimited gratis, Friends können direkt von Releases-Page laden.
+- Memory `feedback_ui_konsistenz_alle.md`: UI-Regeln gelten überall, nicht nur primärer Renderer.
+- Memory `project_unfck_bandcamp_ep_actions_idea.md`: EP-als-Ganzes hearten/playlistten als Feature-Idee geparkt.
+- **Release-Discipline ab jetzt:** Patches sammeln auf master, nur taggen wenn Marco "ja release" sagt oder mehrere Changes da sind. Nicht mehr nach jedem Patch.
 
-### Find Curators Source-Picker + Find-Diggers→Curators (v1.39.0 + v1.43.0)
+## Nächste Session
 
-Source-Dropdown: my owned releases / my open wishlist / a specific playlist. `listWishlistTralbums` + `listPlaylistTralbums` neu in `lib/sync/diggers.ts`. UI-Rename Diggers→Curators (alle UI-Strings, DB-Tabellen + Routes bleiben `digger*`).
-
-### UI-Polish-Pass (v1.40.x)
-
-- Action-Bar überall: Heart → Playlist → Follow → Archive (uniform)
-- Top-Nav: Avatar-Pill (BC-Profilbild über `/api/auth/avatar`, 6h localStorage-Cache) statt @username + Cog
-- Kontrast-Sweep: `bg-accent text-fg-primary` → `text-fg-on-accent` (18 Files, 34 Lines, fix für Light-Mode)
-- "via Curator" lesbarer (`text-fg-secondary` statt fg-muted, plus klickbarer Link wenn bcFanId bekannt)
-- Setup-Wizard "Crawler/Main" → "Burner / Your Bandcamp account", ausklappbare DevTools-Anleitung
-- Empty-States überall einladender mit Calls-to-Action
-
-### Tooltip-Component (v1.40.0+, Refactored v1.42.0)
-
-`<Tooltip>`-Komponente mit Portal + Fixed-Position, viewport-edge-clamp, auto-flip. Migriert: WishlistButton, FollowButton, AddToPlaylistButton, CurationButtons, PlayedCheck, PartialPlayedDot, HidePlayedToggle, AppShell-More+Avatar, StickyPlayerBar Player-Buttons + Time-Toggle, TrackRow Play+BC-Link.
-
-### Multi-Select + Soft-Dismiss (v1.42.0–v1.43.0)
-
-Pattern aus Diggers-Tab auf alle drei Discover-Tabs ausgerollt:
-- New tracks: Bulk "Mark as played" + "Mark seen" mit localStorage `unfck.tracks.seen.v1`
-- Curators: Bulk "Follow & mark seen" / "Mark seen" / "Permanently ignore" mit localStorage `unfck.diggers.seen.v1`, plus "Hide already-followed"-Toggle
-- Follows: Bulk-Unfollow für Artists/Labels/Curators, EntityCard mit Checkbox
-
-Tab-Counter respektiert seen + already-followed (custom-event-driven hook `useStoredSeenSet`).
-
-### Datetime-Helper + Format-Vereinheitlichung (v1.41.0)
-
-`lib/util/datetime.ts` mit `formatDateTime` (dd.mm.yyyy HH:MM) + `formatDate`. Migriert: Setup last-sync, Wishlist boughtAt, History playedAt, Home recent-syncs.
-
-### Counter-Fix + 404-Fix + Release-Date (v1.44.0)
-
-- Hide-curators-Counter zählt jetzt followed + seen (vorher nur followed)
-- `/track/[id]` zeigt eigene "Track unavailable"-Page statt 404 wenn Lookup fehlschlägt; mit BC-Fallback-Link
-- Release-Date Option 1: `listDiggerCollection` joined `tracks` per `bc_track_id`/`bc_album_id` für `released_at` + `localTrackId`
-- Release-Date Option 2: Track-Permalink macht on-demand `lookupTrack` wenn `released_at` NULL, refresht und re-rendert
-
-## Bekannte offene Punkte / Pläne in `docs/specs/`
-
-**Plan 1: TrackRow Unification** — `docs/specs/2026-05-04-trackrow-unification.md`
-- Eine `<TrackRow>` für alle Tracklisten (Library, History, Wishlist, Discover, Curator-Collection, Playlist-Detail)
-- Slot-basiert: leading (checkbox/position/reorder), trailing (album-expand/remove), expandedContent (album-tracks)
-- 5 Phasen, ~3.5h, Migrations-Plan + Test-Checkliste
-- DiggerAlbumTrackRow-Custom verschwindet; Curator-Collection + Playlist-Detail nutzen die unified component
-
-**Plan 2: Tauri Distribution + Auto-Updater** — `docs/specs/2026-05-03-tauri-distribution.md`
-- Tauri-Wrapper (Win/macOS/Linux), Embedded-Browser-Login statt Cookie-Paste
-- GitHub Releases als Distribution-Pfad mit Auto-Updater (tauri-plugin-updater)
-- 5 Phasen, ~1.5-2 Tage, GitHub Actions Release-Workflow inklusive
-- Code-Signing optional (Phase 2)
-
-**Akzeptierte Trade-offs:**
-- Wellenform pro Row (Beatport-Style inline) — pro-Row WaveSurfer-Instanz wäre Performance-Killer
-- BPM Live-Detection — Offline-Detection läuft, Live rolled back wegen `createMediaElementSource`-Konflikt
-- Mobile-Layout (Desktop-only ab ~1280px)
-- Curator-URL bleibt `/digger/[id]` (DB-Tabellen heißen weiter `diggers`); Renaming wäre Migration-Overkill
-
-**Offene Codex-MED-Findings (lower priority):**
-- Discovery feed-endpoint refactor für Wegwerf-Setup (aktuell iteriert über Follows)
-- Per-Item-Errors auch in den restlichen 4 Sync-Modulen — schon erledigt
-- Audio-stream Server-Errors strukturiert
-- Migration-Half-State-Schutz (Pro-Migration-Transaction)
-- Several silent catches in `lib/bandcamp/parse_release.ts` / `resolve_ids.ts`
-
-## Test-Checkliste für Marco
-
-1. `npm run dev` → http://localhost:3457
-2. /setup: 2-Step-Wizard durchklicken, Avatar-Pill oben rechts sichtbar
-3. /discover: alle 4 Tabs (New tracks Multi-Select, Follows Multi-Unfollow, Curators Multi-Select+Mark-Seen)
-4. /wishlist: open/bought/dismissed mit dd.mm.yyyy hh:mm
-5. /digger/[id]: Inactive-Badge mit Datum-Suffix, Album-Expand-Button "Tracks ▾"
-6. /track/[unbekannte-id]: zeigt "Track unavailable" mit BC-Fallback statt 404
-7. Tooltips: Hover auf Heart/Playlist/Follow/Archive zeigt dunkle Tooltip-Bubbles, kein Browser-Gelb mehr
-8. /api/diagnostics: JSON-Snapshot mit version 1.44.0, schema.drift []
-
-## Stand-Log (letzte Sessions)
-
-- 2026-04-25 bis 2026-04-29: Phase A bis W (siehe vorherige Phasen-Memo)
-- 2026-05-01: Phase X-AE (Theme-System, Tempo+BPM, Datum, Konsistenz-Sweep, Mikro-Animationen, Everything-Lookup, Datum+cross-EP-queue, Mobile-API-Discography)
-- 2026-05-03: Riesige Session — Auth-Split, UI-Polish-Pass, Tauri-Spec, Codex-Audit-Pass, Diggers→Curators Rename, Multi-Select-Pattern, Counter-Fix, Avatar-Bild aus BC, Custom-Tooltip-Portal-Refactor, Release-Date Option 1+2, Custom-Error-Page für Track-404
-- 2026-05-04: TrackRow-Unification-Plan + Tauri-Plan geschrieben
-- 2026-05-04: Sammelcommit v1.44.0 (37 Phasen seit v0.7.0). Phase AI: TrackRow-Unification durch — alle 5 Phasen, build clean. Tauri-Distribution als nächstes.
-
-## Phase AJ — Tauri Distribution + Auto-Updater (v2.0.0)
-
-5 Phasen aus `docs/specs/2026-05-03-tauri-distribution.md`:
-
-1. **Bootstrap.** `@tauri-apps/cli` installiert, `npx tauri init` mit Defaults (`com.unfck.bandcamp`, `Unfck Bandcamp`, devUrl `http://localhost:3457`). `src-tauri/tauri.conf.json` setzt `frontendDist: ../public/tauri-shell` (Splash-HTML), `bundle.resources` packt das standalone-tree mit ein. `src-tauri/src/lib.rs` spawnt im Release-Build den Sidecar-Process (`node .next/standalone/server.js`) mit `PORT=3457`, `HOSTNAME=127.0.0.1`, `DATABASE_PATH=<app_data>/data/unfck.db`. Im Debug-Build läuft `npm run dev` als `beforeDevCommand` und der Sidecar-Spawn wird übersprungen. `public/tauri-shell/index.html` zeigt einen Splash mit Spinner und polled `/api/health`, dann redirected er auf die Live-UI.
-2. **Embedded Login.** `open_bandcamp_login` Tauri-Command spawned eine `bc-login-<role>`-WebView auf bandcamp.com/login, polled die URL bis zur Post-Login-Seite und liest den Username aus dem Pfad. Cookie-Extraction-API ist plattform-spezifisch (WebView2/WKWebView/WebKitGTK) — Stub gibt aktuell leeren cookieString zurück, Setup-Wizard fällt dann graceful auf Cookie-Paste zurück. `src/lib/tauri/client.ts` mit `isTauri()` + `signInWithBandcamp(role)` als SSR-safe Wrapper. Setup-Wizard rendert "Sign in with Bandcamp"-Button conditional auf `tauriRuntime` für beide Rollen (crawler/main).
-3. **GitHub Actions Pipeline.** Updater-Keypair via `npx tauri signer generate --ci` erzeugt; Public-Key in `tauri.conf.json` eingebaut, Private-Key + Password als `TAURI_SIGNING_PRIVATE_KEY` + `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` in GitHub-Secrets gepusht. `.github/workflows/release.yml` mit `tauri-action@v0`-Matrix für `windows-latest`, `macos-latest` (arm64+x86_64-cross-compile), `ubuntu-22.04`. Trigger: Push eines `v*.*.*`-Tags. Linux braucht `libwebkit2gtk-4.1-dev` + `libappindicator3-dev` + `librsvg2-dev`. Alle drei OS-Installer + `latest.json`-Manifest landen automatisch in einer GitHub Release.
-4. **Updater-Plugin.** `tauri-plugin-updater` in Cargo.toml + `tauri::Builder::plugin(...)` in `lib.rs`. `tauri.conf.json::plugins.updater` mit `endpoints` (GitHub-Releases-latest.json) + `pubkey` (ed25519). `src/components/UpdaterBanner.tsx` polled `checkForAppUpdate()` bei Mount + alle 24h, zeigt eine sticky Top-Banner mit Version + Notes + "Install + restart"-Button. `applyAppUpdate` ruft `downloadAndInstall` + `relaunch`. Banner ist im AppShell vor `<header>` gemountet, rendert nichts wenn nicht-Tauri oder kein Update.
-5. **Friend-Test.** Out of scope laut Spec, übersprungen — geht erst nach erstem CI-Build mit echtem Installer.
-
-**Capabilities:** `src-tauri/capabilities/default.json` erweitert um `core:webview:allow-create-webview-window`, `updater:default` + `allow-check`/`allow-download`/`allow-install`/`allow-download-and-install`. Window-Pattern `bc-login-*` whitelisted für die Login-WebView.
-
-**Build-Status:**
-- `tsc --noEmit` clean.
-- `next build` clean.
-- `cargo build` lokal nicht möglich: VS BuildTools 2022 ist auf Marcos Rechner installiert, **aber das C++ Workload (cl.exe, link.exe, MSVCRT) fehlt**. `vs_installer.exe modify --add Microsoft.VisualStudio.Workload.VCTools` lief silent durch ohne UAC-Prompt → Workload nicht installiert. Marco muss das mit Admin-Rechten nachholen für lokalen Tauri-Build. Remote-Build via GitHub Actions ist davon nicht betroffen — die Runner haben ihre Toolchain.
-- **Validation läuft beim ersten Tag-Push via GitHub Actions.**
-
-**Bekannte offene Punkte:**
-- Embedded-Login Cookie-Extraction (Tauri-2-API stabil ist plattform-spezifisch). Wizard fällt graceful auf Cookie-Paste zurück.
-- Code-Signing nicht aktiv: SmartScreen (Win) + Gatekeeper (macOS) zeigen Warnings. Phase 2 im Spec, übersprungen.
-- Friend-Test (frische VM, fremde Hardware) nicht durchgeführt.
-
-## Phase AI — TrackRow Unification (v1.45.0)
-
-5 Phasen aus `docs/specs/2026-05-04-trackrow-unification.md`:
-
-1. **API erweitert.** TrackRow.tsx nimmt jetzt `variant`, `position`, `reorderControls`, `selectable`, `trailing`, `expandedContent`, `titleHref`, `badges`, `showFollow/Archive/BcLink`, `hideAlbumColumn/Duration`, `partialPlayedFraction` an. Defaults so gewählt, dass alle 8 bestehenden Aufrufer unverändert kompilieren. Inline action-buttons durch `<TrackActionsBar>` ersetzt — damit kommt Lazy-Resolve für nicht-importierte Curator-Items kostenlos.
-2. **Curator-Track-Items.** `DiggerDetailClient.renderCollectionItem` rendert track-items als `<TrackRow titleHref="/track/go?url=…" badges="You own this" showFollow showArchive hideAlbumColumn hideDuration onPlayOverride={...} />`.
-3. **Curator-Album-Items + DiggerAlbumTrackRow gelöscht.** Album-items rendern als TrackRow mit `trailing={AlbumExpandToggle}` und `expandedContent={AlbumTracklist}`. Inline tracklist nutzt neue `AlbumTrackCompactRow`-Wrapper, der TrackRow mit `variant="compact" position={t.trackNumber}` rendert. Code-Reduktion: ~150 LOC.
-4. **Playlist-Detail.** PlaylistDetailClient nutzt TrackRow mit `position`, `reorderControls`, `trailing={Remove}`, `hideDuration`. Custom Reorder-Wrapper raus.
-5. **Discover-Tracks-Tab.** TracksTab nutzt `selectable={{selected, onToggle, label}}` statt Wrapper-Flex mit eigener Checkbox.
-
-**Build-Status:** `tsc --noEmit` clean. `next build` clean (alle Routen kompilieren). ESLint-Config fehlt im Repo (Pre-existing, nicht durch diese Session verursacht).
+1. **Marco testet v2.4.3 Installer.** Wenn Splash durchläuft → Selbst-Test komplett, dann Friend-Test mit 1-2 Leuten. Wenn Splash weiter hängt → v2.4.2's `[sidecar]`-Logs zeigen den echten Grund.
+2. **v2.5.0 Plan**: UpdaterBanner Fortschritts-Bar + Embedded-Login Cookie-Extraktion fertig.
+3. **Geordnete Releases**: erst sammeln, dann taggen. Nicht jeder commit ein Tag.

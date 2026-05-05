@@ -4,7 +4,10 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
-        .invoke_handler(tauri::generate_handler![commands::open_bandcamp_login])
+        .invoke_handler(tauri::generate_handler![
+            commands::open_bandcamp_login,
+            commands::wait_for_server,
+        ])
         .setup(|app| {
             // In release builds we spawn the Next.js standalone server as
             // a sidecar process. Node is bundled with the app via the
@@ -12,8 +15,21 @@ pub fn run() {
             // the official Node binary per OS-triple before bundling.
             // In debug builds Tauri's beforeDevCommand already runs
             // `npm run dev`, so we skip the spawn there.
+            //
+            // Stale-sidecar guard: if the loopback port is already
+            // listening (previous instance still alive, or the user
+            // started a manual `npm run start` on the same port), don't
+            // spawn a second Node — it would die with EADDRINUSE and
+            // poison the log. Splash will reach the existing server.
             if !cfg!(debug_assertions) {
-                sidecar::spawn_nextjs_server(app.handle())?;
+                if sidecar::is_port_listening(sidecar::PORT) {
+                    log::warn!(
+                        "Port {} already in use — skipping sidecar spawn (existing server will be reused).",
+                        sidecar::PORT
+                    );
+                } else {
+                    sidecar::spawn_nextjs_server(app.handle())?;
+                }
             }
             Ok(())
         })
@@ -129,6 +145,26 @@ mod commands {
         pub username: Option<String>,
         pub role: String,
     }
+
+    /// Polls the loopback port until the bundled Next.js sidecar is
+    /// ready to accept connections. The splash HTML calls this via
+    /// Tauri IPC instead of doing a cross-origin fetch — that way we
+    /// avoid the `tauri.localhost → 127.0.0.1:3457` CORS dance and
+    /// keep the API surface closed to external origins.
+    #[tauri::command]
+    pub async fn wait_for_server() -> Result<u16, String> {
+        let port = super::sidecar::PORT;
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        while std::time::Instant::now() < deadline {
+            if super::sidecar::is_port_listening(port) {
+                return Ok(port);
+            }
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        }
+        Err(format!(
+            "Local server did not start within 60s on port {port}. Check %LOCALAPPDATA%/com.unfck.bandcamp/logs/ for sidecar stdout."
+        ))
+    }
 }
 
 mod sidecar {
@@ -158,6 +194,21 @@ mod sidecar {
     /// `npm run dev` script so a developer who runs `tauri dev` sees the
     /// same UI as a release build.
     pub const PORT: u16 = 3457;
+
+    /// Cheap TCP-connect probe to detect whether something is already
+    /// listening on the loopback port. Used both as a stale-sidecar
+    /// guard at startup (so we don't spawn a second Node that would
+    /// die with EADDRINUSE) and as the readiness check the splash
+    /// invokes via IPC.
+    pub fn is_port_listening(port: u16) -> bool {
+        use std::net::{SocketAddr, TcpStream};
+        use std::time::Duration;
+        let addr: SocketAddr = match format!("127.0.0.1:{}", port).parse() {
+            Ok(a) => a,
+            Err(_) => return false,
+        };
+        TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+    }
 
     pub fn spawn_nextjs_server(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         // Resource dir contains the bundled standalone server tree.

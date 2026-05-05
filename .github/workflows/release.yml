@@ -55,7 +55,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # Must match NODE_BUNDLE_VERSION above. better-sqlite3 prebuild
+          # is selected by the Node version that runs `npm ci`, and the
+          # binding has to load against the same NODE_MODULE_VERSION at
+          # runtime — otherwise the sidecar dies with ERR_DLOPEN_FAILED.
+          node-version: 22
           cache: npm
 
       - name: Setup Rust (stable)

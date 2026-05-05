@@ -69,50 +69,57 @@
     }
   </style>
   <script>
-    // Poll the embedded sidecar until /api/health responds, then redirect
-    // the WebView to the live UI. Tauri's setup hook spawns the Next.js
-    // standalone server on this same loopback port. Probe with a short
-    // backoff and surface progressive diagnostics so a stuck splash is
-    // actionable rather than a silent freeze.
-    const PORT = window.__UNFCK_PORT__ || 3457;
-    const target = `http://127.0.0.1:${PORT}/`;
-    const start = Date.now();
+    // Wait for the embedded sidecar via Tauri IPC, then navigate to the
+    // live UI. Doing the readiness check from Rust avoids the
+    // tauri.localhost ↔ 127.0.0.1:3457 cross-origin CORS problem we'd
+    // hit if the splash fetched /api/health itself. The Rust-side
+    // probe is a TCP connect — same loopback, no browser CORS rules.
     const $s = document.getElementById('s');
     const $h = document.getElementById('h');
     const $e = document.getElementById('e');
+    const stageMessages = [
+      [0, 'Starting local server…', ''],
+      [5000, 'Booting Node sidecar…', 'First start takes a few extra seconds while the bundled Node parses node_modules.'],
+      [15000, 'Still trying to reach the local server…',
+        'If this hangs longer than a minute, press F12 to open DevTools. ' +
+        'Sidecar logs land in %LOCALAPPDATA%/com.unfck.bandcamp/logs/ on Windows.'],
+    ];
+    let stageIdx = 0;
+    const startedAt = Date.now();
+    const stageTimer = setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      while (stageIdx + 1 < stageMessages.length && elapsed >= stageMessages[stageIdx + 1][0]) {
+        stageIdx++;
+      }
+      $s.textContent = stageMessages[stageIdx][1];
+      $h.textContent = stageMessages[stageIdx][2];
+    }, 500);
 
-    async function probe() {
-      try {
-        const r = await fetch(`${target}api/health`, { cache: 'no-store' });
-        if (r.ok) {
-          window.location.replace(target);
-          return;
-        }
-      } catch (_) { /* server not up yet */ }
-
-      const elapsed = Date.now() - start;
-      if (elapsed > 5000 && elapsed < 15000) {
-        $s.textContent = 'Booting Node sidecar…';
-        $h.textContent = 'First start takes a few extra seconds while the bundled Node parses node_modules.';
-      } else if (elapsed > 15000 && elapsed < 60000) {
-        $s.textContent = 'Still trying to reach the local server…';
+    async function start() {
+      const tauri = window.__TAURI__;
+      const invoke = tauri && tauri.core && tauri.core.invoke;
+      if (!invoke) {
+        clearInterval(stageTimer);
+        $s.textContent = 'Splash not running inside Tauri.';
         $h.textContent =
-          'If this hangs longer than a minute, press F12 to open DevTools — Console + Network tabs show what fetch returns. ' +
-          'Sidecar logs land in the Tauri app-log directory (%LOCALAPPDATA%/com.unfck.bandcamp/logs/ on Windows).';
-      } else if (elapsed >= 60000) {
-        $s.textContent = 'Local server did not start.';
-        $e.textContent =
-          'The bundled Node sidecar failed to bind to port ' + PORT + ' within 60s. ' +
-          'Press F12 → Console for browser-side errors, or open the app log folder to inspect the sidecar stdout.';
-        $h.textContent =
-          'Common causes: port ' + PORT + ' already in use by another tool, antivirus blocking node.exe, ' +
-          'or a missing native module in the bundled node_modules tree.';
+          'This page expects the Tauri runtime. Open the app via the installer instead of loading the file directly.';
         return;
       }
-      setTimeout(probe, 500);
+      try {
+        const port = await invoke('wait_for_server');
+        clearInterval(stageTimer);
+        window.location.replace(`http://127.0.0.1:${port}/`);
+      } catch (err) {
+        clearInterval(stageTimer);
+        $s.textContent = 'Local server did not start.';
+        $e.textContent = String(err);
+        $h.textContent =
+          'Common causes: port already in use by another tool, antivirus blocking node.exe, ' +
+          'or a missing native module in the bundled node_modules tree. Logs in %LOCALAPPDATA%/com.unfck.bandcamp/logs/.';
+      }
     }
 
-    probe();
+    start();
   </script>
 </body>
 </html>
