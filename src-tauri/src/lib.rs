@@ -8,6 +8,15 @@ pub fn run() {
             commands::open_bandcamp_login,
             commands::wait_for_server,
         ])
+        .on_window_event(|window, event| {
+            // We don't intercept close in Rust — the frontend's
+            // onCloseRequested listener decides whether to hide-to-tray
+            // based on the user's saved preference. Rust here only logs
+            // for diagnostics.
+            if let tauri::WindowEvent::CloseRequested { .. } = event {
+                log::info!("window close requested: {}", window.label());
+            }
+        })
         .setup(|app| {
             // In release builds we spawn the Next.js standalone server as
             // a sidecar process. Node is bundled with the app via the
@@ -31,6 +40,7 @@ pub fn run() {
                     sidecar::spawn_nextjs_server(app.handle())?;
                 }
             }
+            tray::install(app.handle())?;
             Ok(())
         })
         .run(tauri::generate_context!())
@@ -164,6 +174,76 @@ mod commands {
         Err(format!(
             "Local server did not start within 60s on port {port}. Check %LOCALAPPDATA%/com.unfck.bandcamp/logs/ for sidecar stdout."
         ))
+    }
+}
+
+mod tray {
+    use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+    use tauri::{AppHandle, Manager};
+    use tauri_plugin_shell::ShellExt;
+
+    /// Build the system-tray icon and its right-click menu. Left-click
+    /// shows the main window; the menu offers Open / Open in Browser /
+    /// Quit. We rely on the frontend (AppShell) to decide whether the
+    /// X button hides the window into this tray — the Rust side just
+    /// guarantees the tray exists when the window is gone.
+    pub fn install(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+        let open_item = MenuItemBuilder::with_id("show", "Open Unfck Bandcamp").build(app)?;
+        let browser_item =
+            MenuItemBuilder::with_id("browser", "Open in browser").build(app)?;
+        let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
+        let menu = MenuBuilder::new(app)
+            .item(&open_item)
+            .item(&browser_item)
+            .item(&PredefinedMenuItem::separator(app)?)
+            .item(&quit_item)
+            .build()?;
+
+        let icon = app
+            .default_window_icon()
+            .ok_or("default window icon missing")?
+            .clone();
+
+        TrayIconBuilder::with_id("main")
+            .icon(icon)
+            .tooltip("Unfck Bandcamp")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    show_main_window(tray.app_handle());
+                }
+            })
+            .on_menu_event(|app, event| match event.id.as_ref() {
+                "show" => show_main_window(app),
+                "browser" => {
+                    let url = format!("http://127.0.0.1:{}/", super::sidecar::PORT);
+                    if let Err(e) = app.shell().open(&url, None) {
+                        log::error!("tray: open in browser failed: {e}");
+                    }
+                }
+                "quit" => {
+                    log::info!("tray: quit selected");
+                    app.exit(0);
+                }
+                _ => {}
+            })
+            .build(app)?;
+        Ok(())
+    }
+
+    fn show_main_window(app: &AppHandle) {
+        if let Some(w) = app.get_webview_window("main") {
+            let _ = w.show();
+            let _ = w.unminimize();
+            let _ = w.set_focus();
+        }
     }
 }
 

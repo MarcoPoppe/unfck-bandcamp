@@ -7,6 +7,9 @@ import UnfckBandcampLogo from './UnfckBandcampLogo';
 import Tooltip from './Tooltip';
 import UpdaterBanner from './UpdaterBanner';
 import { usePlayerStore } from '@/lib/store/player';
+import { isTauri } from '@/lib/tauri/client';
+
+export const MINIMIZE_TO_TRAY_KEY = 'unfck.minimize_to_tray';
 
 interface NavItem {
   href: string;
@@ -166,6 +169,35 @@ export default function AppShell({
     if (libOpen) document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [libOpen]);
+
+  // Hide-to-tray on window close, when the user has opted in via /setup.
+  // We intercept the close event in JS rather than Rust because the
+  // preference lives in localStorage (per-instance, not synced) and JS
+  // already has access to it without a round-trip. Rust still owns the
+  // tray icon and quit menu so an unhidden app can still be dismissed.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      try {
+        const mod = await import(
+          /* webpackIgnore: true */ '@tauri-apps/api/window'
+        );
+        const win = mod.getCurrentWindow();
+        unlisten = await win.onCloseRequested(async (event) => {
+          if (localStorage.getItem(MINIMIZE_TO_TRAY_KEY) === 'true') {
+            event.preventDefault();
+            await win.hide();
+          }
+        });
+      } catch (err) {
+        console.warn('tray close handler failed', err);
+      }
+    })();
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
 
   useEffect(() => {
     setLibOpen(false);

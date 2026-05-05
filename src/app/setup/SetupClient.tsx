@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { isTauri, signInWithBandcamp } from '@/lib/tauri/client';
 import AboutPanel from '@/components/AboutPanel';
+import { MINIMIZE_TO_TRAY_KEY } from '@/components/AppShell';
 import ShortcutsEditor from '@/components/ShortcutsEditor';
 import PreferencesEditor from '@/components/PreferencesEditor';
 import DatabaseInspector from '@/components/DatabaseInspector';
@@ -702,32 +703,75 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
 
       <PreferencesEditor />
       <ShortcutsEditor />
-      {tauriRuntime && (
-        <section className="rounded-lg border border-border bg-bg-surface p-6">
-          <h2 className="text-xl font-semibold">App window</h2>
-          <p className="mt-2 text-sm text-fg-secondary">
-            By default the app runs inside its own desktop window. If you
-            prefer the standard browser experience (Tabs, Bookmarks, F12
-            DevTools), open the local server in your default browser. The
-            desktop window stays open as the host of the local server —
-            don&rsquo;t close it, or the browser tab will lose its
-            backend.
-          </p>
-          <button
-            type="button"
-            onClick={() => {
-              window.open(`${window.location.origin}/`, '_blank', 'noopener');
-            }}
-            className="mt-3 rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
-          >
-            ↗ Open in default browser
-          </button>
-        </section>
-      )}
+      {tauriRuntime && <AppWindowSection />}
       <AboutPanel version={initial.appVersion} />
       <DiagnosticsPanel />
       <DatabaseInspector />
     </div>
+  );
+}
+
+function AppWindowSection() {
+  const [trayOnClose, setTrayOnClose] = useState(false);
+  // Hydrate from localStorage on mount. The toggle is purely client-side
+  // state — Rust doesn't read it; AppShell's onCloseRequested listener
+  // reads the same key and decides whether to hide vs close.
+  useEffect(() => {
+    setTrayOnClose(localStorage.getItem(MINIMIZE_TO_TRAY_KEY) === 'true');
+  }, []);
+
+  function toggle() {
+    const next = !trayOnClose;
+    setTrayOnClose(next);
+    if (next) localStorage.setItem(MINIMIZE_TO_TRAY_KEY, 'true');
+    else localStorage.removeItem(MINIMIZE_TO_TRAY_KEY);
+  }
+
+  return (
+    <section className="rounded-lg border border-border bg-bg-surface p-6">
+      <h2 className="text-xl font-semibold">App window</h2>
+      <p className="mt-2 text-sm text-fg-secondary">
+        By default the app runs inside its own desktop window. If you
+        prefer the standard browser experience (Tabs, Bookmarks, F12
+        DevTools), open the local server in your default browser. The
+        desktop window stays open as the host of the local server —
+        don&rsquo;t close it, or the browser tab will lose its
+        backend.
+      </p>
+      <button
+        type="button"
+        onClick={() => {
+          window.open(`${window.location.origin}/`, '_blank', 'noopener');
+        }}
+        className="mt-3 rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
+      >
+        ↗ Open in default browser
+      </button>
+
+      <div className="mt-6 border-t border-border pt-5">
+        <label className="flex cursor-pointer items-start gap-3">
+          <input
+            type="checkbox"
+            checked={trayOnClose}
+            onChange={toggle}
+            className="mt-1 h-4 w-4 cursor-pointer"
+          />
+          <span className="flex-1">
+            <span className="block text-sm font-medium">
+              Close button minimizes to system tray
+            </span>
+            <span className="mt-1 block text-xs text-fg-muted">
+              When enabled, clicking the X hides the window but keeps the
+              app running in the system tray (next to the clock). The
+              local server stays alive so your browser tab to
+              127.0.0.1:3457 keeps working. Right-click the tray icon for
+              a real Quit. When disabled, X behaves like in any other
+              app: it quits the app and stops the server.
+            </span>
+          </span>
+        </label>
+      </div>
+    </section>
   );
 }
 
