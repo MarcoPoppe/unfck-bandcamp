@@ -30,10 +30,17 @@ export async function importFollowsFromBandcamp(): Promise<ImportFollowsResult> 
 
   const startedAt = Date.now();
 
+  // Pick (fan_id, cookie) as a matched pair: Bandcamp's
+  // following_bands endpoint returns [] when the auth cookie doesn't
+  // belong to the requested fan_id, even though the public profile
+  // page lists the same follows. Mixing them silently produced
+  // "0 bands in 300ms" with no error.
   let targetFanId: number | null = null;
+  let targetCookieString: string = auth.cookieString;
   const main = getStoredMainAuth();
   if (main) {
     targetFanId = main.fanId;
+    targetCookieString = main.cookieString;
   } else {
     const targetUsername = getCrawlTargetUsername();
     if (targetUsername && targetUsername !== auth.username) {
@@ -47,7 +54,7 @@ export async function importFollowsFromBandcamp(): Promise<ImportFollowsResult> 
 
   let bands;
   try {
-    bands = await fetchFollowedBands(targetFanId, auth.cookieString);
+    bands = await fetchFollowedBands(targetFanId, targetCookieString);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     recordSyncError({
