@@ -1195,7 +1195,7 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
     setCrawling(true);
     setMessage(null);
     try {
-      const res = await fetch('/api/sync/curators', {
+      const res = await fetch('/api/sync/diggers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1222,7 +1222,7 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
             ? 'wishlist tracks'
             : source === 'playlist'
               ? `playlist "${playlists.find((p) => p.id === playlistId)?.name ?? '?'}"`
-              : 'owned releases';
+              : 'library releases';
         setMessage(
           `Scanned ${json.itemsCrawled ?? 0} ${sourceLabel}, ${json.collectorsSeen ?? 0} collectors, ${json.diggersWritten ?? 0} curators found in ${seconds}s` +
             (errCount > 0 ? ` (${errCount} errors)` : ''),
@@ -1245,7 +1245,7 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
     if (ignoreBusy.has(d.diggerId)) return;
     setIgnoreBusy((s) => new Set(s).add(d.diggerId));
     try {
-      const res = await fetch(`/api/curators/${d.diggerId}`, {
+      const res = await fetch(`/api/diggers/${d.diggerId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'ignore' }),
@@ -1301,7 +1301,7 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
             disabled={crawling}
             className="rounded border border-border bg-bg-base px-2 py-1.5 text-sm focus:border-accent focus:outline-none disabled:opacity-50"
           >
-            <option value="owned">my owned releases</option>
+            <option value="owned">my library</option>
             <option value="wishlist">my open wishlist</option>
             <option value="playlist">a specific playlist</option>
           </select>
@@ -1441,7 +1441,7 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
                 ? 'your wishlist'
                 : source === 'playlist'
                   ? 'a playlist'
-                  : 'your owned releases'}
+                  : 'your library'}
               ) and run &ldquo;Find curators&rdquo; — it scans the supporters of
               each tralbum and ranks Bandcamp users with overlapping taste.
             </p>
