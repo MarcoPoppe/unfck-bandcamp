@@ -1058,6 +1058,7 @@ function FollowsTab({ initialArtists, initialLabels, initialDiggers }: FollowsTa
                     imageUrl={a.imageUrl}
                     title={a.name}
                     subtitle={a.bcUrl}
+                    href={a.bcBandId ? `/artist/${a.bcBandId}` : undefined}
                     selected={selectedFollows.has(a.id)}
                     onSelect={() => toggleFollowSelected(a.id)}
                     onUnfollow={() => handleUnfollow('artist', a.id)}
@@ -1070,6 +1071,7 @@ function FollowsTab({ initialArtists, initialLabels, initialDiggers }: FollowsTa
                     imageUrl={l.imageUrl}
                     title={l.name}
                     subtitle={l.bcUrl}
+                    href={`/label/${l.id}`}
                     selected={selectedFollows.has(l.id)}
                     onSelect={() => toggleFollowSelected(l.id)}
                     onUnfollow={() => handleUnfollow('label', l.id)}
