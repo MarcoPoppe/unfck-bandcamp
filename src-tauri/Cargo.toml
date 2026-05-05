@@ -1,6 +1,6 @@
 [package]
 name = "unfck-bandcamp"
-version = "2.4.10"
+version = "2.4.11"
 description = "Self-hosted Bandcamp discovery tool with Beatport-style UI"
 authors = ["Marco Poppe"]
 license = "MIT"
@@ -23,5 +23,6 @@ tauri = { version = "2.11.0", features = ["devtools", "tray-icon"] }
 tauri-plugin-log = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-shell = "2"
+tauri-plugin-process = "2"
 tokio = { version = "1", features = ["time"] }
 url = "2"
