@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Unfck Bandcamp",
-  "version": "2.4.4",
+  "version": "2.4.5",
   "identifier": "com.unfck.bandcamp",
   "build": {
     "frontendDist": "../public/tauri-shell",
@@ -39,9 +39,7 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../.next/standalone/**/*",
-      "../.next/static/**/*",
-      "../public/**/*"
+      "../.next/standalone/**/*"
     ],
     "externalBin": ["binaries/node"]
   },

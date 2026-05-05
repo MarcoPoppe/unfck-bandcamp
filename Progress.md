@@ -1,7 +1,7 @@
 # Unfck Bandcamp
 
-**Version:** 2.4.4 (siehe `package.json`)
-**Status:** Tauri-Installer mit gebundeltem Node, alle UI-Polish-Loops von v2.1.x abgearbeitet, History aggregiert + Search überall, /setup hat Browser-Button. **v2.4.3 hatte zwei Bugs: better-sqlite3 NODE_MODULE_VERSION-Mismatch (CI Node 20 vs gebundelter Node 22) und CORS zwischen tauri.localhost und 127.0.0.1:3457.** v2.4.4 fixt beides + Stale-Sidecar-Schutz.
+**Version:** 2.4.5 (siehe `package.json`)
+**Status:** Tauri-Installer mit gebundeltem Node, alle UI-Polish-Loops von v2.1.x abgearbeitet, History aggregiert + Search überall, /setup hat Browser-Button. **v2.4.3 → v2.4.5 sind eine Bug-Kaskade nach jeder Symptom-Schicht.** v2.4.4 fixt Node-ABI + CORS + Stale-Sidecar. v2.4.5 fixt das nächste Symptom: `.next/static/` und `public/` werden in den standalone-Tree kopiert (next standalone bekannte Stolperfalle), sonst rendert die App ungestylt und React hydratisiert nie.
 **Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/latest
 **Repo:** https://github.com/MarcoPoppe/unfck-bandcamp (public seit 2026-05-04, GH-Actions sind damit unlimited gratis).
 **Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose / `npm run dev` bleibt Option für Power-User.
@@ -85,6 +85,9 @@ Sehr lange Session. Komplette Tauri-Distribution + viele UI-Loops.
   - **CI Node 20 → 22**: `npm ci` lief mit Node 20, prebuild-install zog NODE_MODULE_VERSION 115 binary. Runtime ist aber Node 22 (NODE_MODULE_VERSION 127). better-sqlite3 crashte mit ERR_DLOPEN_FAILED beim Laden im instrumentation hook → 500 auf jedem Request.
   - **Splash auf Tauri-IPC**: `wait_for_server` Tauri-Command (Rust-side TCP-connect-Probe) statt cross-origin fetch. Vermeidet das tauri.localhost ↔ 127.0.0.1:3457 CORS-Problem ohne API-Surface zu öffnen. `withGlobalTauri: true` in tauri.conf für `window.__TAURI__.core.invoke` im Vanilla-JS-Splash.
   - **Stale-Sidecar-Schutz**: setup() prüft `is_port_listening(3457)` vor Spawn. Vermeidet EADDRINUSE-Folgefehler wenn ein vorheriger Node-Prozess noch hängt.
+- v2.4.5: Asset-Bundling für next standalone gefixt:
+  - **`.next/static/` und `public/` in standalone-Tree kopiert** über erweiterten `tauri-prepare-shell.mjs`. next build mit `output: 'standalone'` lässt die Ordner aus, doku-bekannt. Ohne Copy: Server rendert SSR-HTML, aber CSS/JS-Chunks 404 → React hydratisiert nie → ungestylte UI mit toten Forms.
+  - **`tauri.conf.json` resources auf nur `../.next/standalone/**/*` reduziert**, statt drei separate Globs die das Bundle-Layout aufbrechen.
 
 ### Repo + Workflow
 - Repo public gemacht (Marco's Bestätigung): GH-Actions sind damit unlimited gratis, Friends können direkt von Releases-Page laden.
