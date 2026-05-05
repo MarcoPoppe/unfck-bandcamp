@@ -96,7 +96,10 @@ export default function DiscoverHub(props: Props) {
   const params = useSearchParams();
   // Tab counters honour the same client-side filters the lists do, so the
   // badge stays in sync as the user marks rows as seen.
-  const seenCurators = useStoredSeenSet('unfck.diggers.seen.v1', CURATORS_SEEN_EVENT);
+  // Keep this key in sync with DIGGERS_SEEN_KEY below — the sub-tab
+  // writes there and dispatches CURATORS_SEEN_EVENT; the hub listens
+  // and reads the same bucket so the tab badge updates with the list.
+  const seenCurators = useStoredSeenSet('unfck.curators.seen.v1', CURATORS_SEEN_EVENT);
   const seenTracks = useStoredSeenSet('unfck.tracks.seen.v1', TRACKS_SEEN_EVENT);
 
   function tabHref(t: Tab): string {

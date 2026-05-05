@@ -121,7 +121,13 @@ export async function fetchFollowedBands(
   cookieString: string,
 ): Promise<BcFollowedBand[]> {
   const out: BcFollowedBand[] = [];
-  let token: string | null = null;
+  // Bandcamp's following_bands endpoint returns [] when older_than_token
+  // is null — collection_items tolerates that, but this endpoint wants a
+  // sentinel meaning "everything older than now". Format is
+  // `<unix_seconds>:<numeric_id>`. A future-dated timestamp works as the
+  // initial cursor; subsequent pages use the last_token from the
+  // previous page.
+  let token: string = `${Math.floor(Date.now() / 1000) + 60}:1`;
   for (let i = 0; i < 100; i += 1) {
     const payload: RawFollowingBandsPage = await bcPostJson<RawFollowingBandsPage>(
       `${BC_ORIGIN}/api/fancollection/1/following_bands`,
