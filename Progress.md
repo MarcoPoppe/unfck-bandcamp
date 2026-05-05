@@ -1,7 +1,7 @@
 # Unfck Bandcamp
 
-**Version:** 2.4.5 (siehe `package.json`)
-**Status:** Tauri-Installer mit gebundeltem Node, alle UI-Polish-Loops von v2.1.x abgearbeitet, History aggregiert + Search überall, /setup hat Browser-Button. **v2.4.3 → v2.4.5 sind eine Bug-Kaskade nach jeder Symptom-Schicht.** v2.4.4 fixt Node-ABI + CORS + Stale-Sidecar. v2.4.5 fixt das nächste Symptom: `.next/static/` und `public/` werden in den standalone-Tree kopiert (next standalone bekannte Stolperfalle), sonst rendert die App ungestylt und React hydratisiert nie.
+**Version:** 2.4.6 (siehe `package.json`)
+**Status:** Tauri-Installer läuft Ende-zu-Ende. v2.4.3-2.4.5 waren eine Bug-Kaskade (Node-ABI, CORS, Asset-Bundling). v2.4.6 ist der erste Build wo die App vollständig rennt: gestylt, hydriert, Library-Sync 38 items. Sammelt Folge-UX-Fixes nach Marcos erstem Test (Username-Anzeige, Curators-API-URL, neues Logo, Update-Button).
 **Release:** https://github.com/MarcoPoppe/unfck-bandcamp/releases/latest
 **Repo:** https://github.com/MarcoPoppe/unfck-bandcamp (public seit 2026-05-04, GH-Actions sind damit unlimited gratis).
 **Zielplattform:** Tauri-Installer pro OS via GitHub Releases + Auto-Updater. Self-Host via Docker Compose / `npm run dev` bleibt Option für Power-User.
@@ -88,6 +88,14 @@ Sehr lange Session. Komplette Tauri-Distribution + viele UI-Loops.
 - v2.4.5: Asset-Bundling für next standalone gefixt:
   - **`.next/static/` und `public/` in standalone-Tree kopiert** über erweiterten `tauri-prepare-shell.mjs`. next build mit `output: 'standalone'` lässt die Ordner aus, doku-bekannt. Ohne Copy: Server rendert SSR-HTML, aber CSS/JS-Chunks 404 → React hydratisiert nie → ungestylte UI mit toten Forms.
   - **`tauri.conf.json` resources auf nur `../.next/standalone/**/*` reduziert**, statt drei separate Globs die das Bundle-Layout aufbrechen.
+- v2.4.6: erste echte Test-Findings nach v2.4.5-Selbsttest:
+  - **Square-Logo** (Parallelogramm + Brushwordmark) ersetzt das alte Wordmark-only über `npx tauri icon` für alle Größen + `.ico`/`.icns`.
+  - **Follow-Import Cookie/fanId-Mismatch**: `following_bands`-Endpoint gab `[]` zurück weil targetFanId=main aber cookie=burner. Jetzt als Pair gewählt.
+  - **Display-Username konsistent** mit Avatar: Header und Home-Greeting nehmen Main-Username wenn linked, statt Burner.
+  - **Curators-API URL**: Client rief `/api/sync/curators` und `/api/curators/[id]`, Routes heißen aber `/api/sync/diggers` / `/api/diggers/[id]` (interne Tabellen-Convention). 404 → HTML-Antwort → JSON-Parse-Crash.
+  - **Shortcuts-Editor**: leere "Filters (on Tracks page)"-Group wird jetzt nicht mehr als Header gerendert.
+  - **About-Panel auf /setup**: Version-Anzeige + manueller "Check for updates"-Button im Tauri-Build, mit Hinweis für Web/Docker-Builds dass Auto-Update desktop-only ist.
+  - **"my owned releases" → "my library"** in Discover-Curator-Source-Picker für Konsistenz mit dem Nav-Label.
 
 ### Repo + Workflow
 - Repo public gemacht (Marco's Bestätigung): GH-Actions sind damit unlimited gratis, Friends können direkt von Releases-Page laden.
