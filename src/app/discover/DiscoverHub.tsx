@@ -693,9 +693,21 @@ function TracksTab({
           <HidePlayedToggle count={hiddenCount} />
         </div>
       </div>
-      {syncing && progress && (
-        <div className="mb-3">
-          <div className="h-1.5 overflow-hidden rounded-full bg-bg-elevated">
+      {syncing && progress ? (
+        // Hide the track list while a sync is running. Earlier behaviour
+        // streamed partial results in as the crawl progressed, but
+        // playing or marking them caused write contention with the
+        // background crawl's INSERTs — plays would silently disappear
+        // on reload. Showing a single blocking progress card avoids the
+        // race entirely; the list reappears whole when the run finishes.
+        <div className="rounded-lg border border-border bg-bg-surface p-8">
+          <h3 className="text-lg font-semibold">Crawling Bandcamp…</h3>
+          <p className="mt-1 text-sm text-fg-secondary">
+            New tracks will show up once the sync completes. Bandcamp
+            rate-limits to ~3 fetches per second, so a few hundred
+            releases take roughly 30 to 60 seconds.
+          </p>
+          <div className="mt-5 h-2 overflow-hidden rounded-full bg-bg-elevated">
             <div
               className="h-full bg-accent transition-all"
               style={{
@@ -705,13 +717,14 @@ function TracksTab({
               }}
             />
           </div>
-          <div className="mt-1 text-xs text-fg-muted">
+          <div className="mt-2 font-mono text-xs text-fg-muted">
             {progress.itemsTotalKnown
-              ? `Crawling ${progress.itemsSynced} of ${progress.itemsTotalKnown} releases — Bandcamp rate-limits to ~3 fetches per second, so a few hundred releases take ~30-60s.`
-              : `Crawling… ${progress.itemsSynced} releases fetched`}
+              ? `${progress.itemsSynced} / ${progress.itemsTotalKnown} releases`
+              : `${progress.itemsSynced} releases fetched`}
           </div>
         </div>
-      )}
+      ) : (
+        <>
       <TrackListSearch
         value={search}
         onChange={setSearch}
@@ -776,6 +789,8 @@ function TracksTab({
               />
             ))}
           </div>
+        </>
+      )}
         </>
       )}
     </>
