@@ -8,14 +8,23 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_bandcamp_login,
             commands::wait_for_server,
+            commands::get_minimize_to_tray,
+            commands::set_minimize_to_tray,
         ])
         .on_window_event(|window, event| {
-            // We don't intercept close in Rust — the frontend's
-            // onCloseRequested listener decides whether to hide-to-tray
-            // based on the user's saved preference. Rust here only logs
-            // for diagnostics.
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
-                log::info!("window close requested: {}", window.label());
+            // Tray-on-close is decided in Rust because the JS-side
+            // onCloseRequested listener wasn't reliably preventing the
+            // close — empirically the window died before the async
+            // handler could run preventDefault. Reading a tiny file
+            // flag here is synchronous and runs inside the close-event
+            // handler itself.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == "main"
+                    && tray::should_minimize_to_tray(window.app_handle())
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
             }
         })
         .setup(|app| {
@@ -157,6 +166,22 @@ mod commands {
         pub role: String,
     }
 
+    /// Returns whether the user has opted in to "X minimizes to tray".
+    /// State lives in a one-byte flag file under app_data_dir so the
+    /// close-event handler can read it synchronously without an IPC
+    /// round-trip.
+    #[tauri::command]
+    pub fn get_minimize_to_tray(app: AppHandle) -> bool {
+        super::tray::should_minimize_to_tray(&app)
+    }
+
+    /// Persist the tray-on-close preference. Called from /setup when
+    /// the user toggles the checkbox.
+    #[tauri::command]
+    pub fn set_minimize_to_tray(app: AppHandle, value: bool) -> Result<(), String> {
+        super::tray::set_minimize_to_tray(&app, value).map_err(|e| e.to_string())
+    }
+
     /// Polls the loopback port until the bundled Next.js sidecar is
     /// ready to accept connections. The splash HTML calls this via
     /// Tauri IPC instead of doing a cross-origin fetch — that way we
@@ -245,6 +270,36 @@ mod tray {
             let _ = w.unminimize();
             let _ = w.set_focus();
         }
+    }
+
+    /// File-backed flag for "X minimizes to tray". The close-event
+    /// handler reads this synchronously, so we keep the on-disk format
+    /// trivially simple: the file's existence means "on", absent means
+    /// "off". No JSON, no parsing, no migration.
+    fn flag_path(app: &AppHandle) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
+        let dir = app.path().app_data_dir()?;
+        std::fs::create_dir_all(&dir).ok();
+        Ok(dir.join("minimize_to_tray.flag"))
+    }
+
+    pub fn should_minimize_to_tray(app: &AppHandle) -> bool {
+        match flag_path(app) {
+            Ok(p) => p.exists(),
+            Err(_) => false,
+        }
+    }
+
+    pub fn set_minimize_to_tray(
+        app: &AppHandle,
+        value: bool,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let path = flag_path(app)?;
+        if value {
+            std::fs::write(&path, b"on")?;
+        } else if path.exists() {
+            std::fs::remove_file(&path)?;
+        }
+        Ok(())
     }
 }
 

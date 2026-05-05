@@ -1,9 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { isTauri, signInWithBandcamp } from '@/lib/tauri/client';
+import {
+  getMinimizeToTray,
+  isTauri,
+  setMinimizeToTray,
+  signInWithBandcamp,
+} from '@/lib/tauri/client';
 import AboutPanel from '@/components/AboutPanel';
-import { MINIMIZE_TO_TRAY_KEY } from '@/components/AppShell';
 import ShortcutsEditor from '@/components/ShortcutsEditor';
 import PreferencesEditor from '@/components/PreferencesEditor';
 import DatabaseInspector from '@/components/DatabaseInspector';
@@ -713,18 +717,23 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
 
 function AppWindowSection() {
   const [trayOnClose, setTrayOnClose] = useState(false);
-  // Hydrate from localStorage on mount. The toggle is purely client-side
-  // state — Rust doesn't read it; AppShell's onCloseRequested listener
-  // reads the same key and decides whether to hide vs close.
+  // Read the flag through the Tauri command that's backed by a tiny
+  // file under app_data_dir. The close-event handler in Rust reads the
+  // same file synchronously — JS-side localStorage didn't work because
+  // the close fired before our async preventDefault could land.
   useEffect(() => {
-    setTrayOnClose(localStorage.getItem(MINIMIZE_TO_TRAY_KEY) === 'true');
+    void getMinimizeToTray().then(setTrayOnClose);
   }, []);
 
-  function toggle() {
+  async function toggle() {
     const next = !trayOnClose;
     setTrayOnClose(next);
-    if (next) localStorage.setItem(MINIMIZE_TO_TRAY_KEY, 'true');
-    else localStorage.removeItem(MINIMIZE_TO_TRAY_KEY);
+    try {
+      await setMinimizeToTray(next);
+    } catch {
+      // Revert on failure so the UI doesn't lie.
+      setTrayOnClose(!next);
+    }
   }
 
   return (

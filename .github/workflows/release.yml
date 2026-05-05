@@ -27,6 +27,10 @@ jobs:
   build-tauri:
     permissions:
       contents: write
+    # Trimmed matrix (v2.4.13): Apple Silicon + Windows x64 only.
+    # Linux dropped — no Linux friends in the current circle. Intel
+    # macOS dropped — friends on aarch64. If a Linux/Intel friend ever
+    # asks, re-add the entry; tauri-action handles the rest.
     strategy:
       fail-fast: false
       matrix:
@@ -35,14 +39,6 @@ jobs:
             args: "--target aarch64-apple-darwin"
             target_triple: "aarch64-apple-darwin"
             node_archive: "darwin-arm64.tar.gz"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
-            target_triple: "x86_64-apple-darwin"
-            node_archive: "darwin-x64.tar.gz"
-          - platform: ubuntu-22.04
-            args: ""
-            target_triple: "x86_64-unknown-linux-gnu"
-            node_archive: "linux-x64.tar.xz"
           - platform: windows-latest
             args: ""
             target_triple: "x86_64-pc-windows-msvc"

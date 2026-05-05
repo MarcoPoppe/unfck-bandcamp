@@ -62,6 +62,23 @@ export async function signInWithBandcamp(
   return invoke<SignInResult>('open_bandcamp_login', { role });
 }
 
+/** Whether X minimizes to tray. Read from a flag file under
+ * app_data_dir, written by setMinimizeToTray. The Rust close-event
+ * handler reads the same flag synchronously. */
+export async function getMinimizeToTray(): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    return await invoke<boolean>('get_minimize_to_tray');
+  } catch {
+    return false;
+  }
+}
+
+export async function setMinimizeToTray(value: boolean): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>('set_minimize_to_tray', { value });
+}
+
 /** Triggers the updater plugin to check for a new release. Returns null
  * when no update is available. */
 export interface UpdateInfo {
