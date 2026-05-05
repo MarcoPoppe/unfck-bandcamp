@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
@@ -383,7 +382,6 @@ export default function ArtistDetailClient({
         </section>
       )}
 
-      <StickyPlayerBar />
     </>
   );
 }

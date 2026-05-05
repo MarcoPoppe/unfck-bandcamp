@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Virtuoso } from 'react-virtuoso';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackRow from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
@@ -834,7 +833,6 @@ export default function DiggerDetailClient({
               ))}
             </div>
           )}
-          <StickyPlayerBar />
           {stats.itemCount != null && stats.itemCount > collectionItems.length && (
             <p className="mt-3 text-xs text-fg-muted">
               Showing {collectionItems.length} of {stats.itemCount}. Click &ldquo;Crawl full

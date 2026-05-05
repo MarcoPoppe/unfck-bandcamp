@@ -17,9 +17,30 @@ export const maxDuration = 600;
  * fire-and-forget pattern the request would block for the full duration of
  * the crawl (10s-3min) and the UI couldn't render a progress bar.
  */
+interface PostBody {
+  releasesPerArtist?: number;
+  releasesPerDigger?: number;
+}
+
+function clampPositiveInt(raw: unknown, max: number): number | undefined {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n <= 0) return undefined;
+  return Math.min(n, max);
+}
+
 export async function POST(req: Request) {
   const local = assertLocalRequest(req);
   if (local) return local;
+  let body: PostBody = {};
+  try {
+    body = (await req.json()) as PostBody;
+  } catch {
+    // empty body is allowed — fall back to defaults
+  }
+  const caps = {
+    releasesPerArtist: clampPositiveInt(body.releasesPerArtist, 200),
+    releasesPerDigger: clampPositiveInt(body.releasesPerDigger, 1000),
+  };
   // If a sync is already running, return its row instead of starting a new
   // one — protects against double-click and panel-juggling.
   const existing = getLatestDiscoverySyncRun();
@@ -35,7 +56,7 @@ export async function POST(req: Request) {
   // sync runs in the background and updates sync_runs.items_synced as it
   // progresses. Errors are persisted to sync_runs.error_message rather than
   // surfacing through the response (the client would already have moved on).
-  void syncFollowedDiscovery(runId).catch(() => {
+  void syncFollowedDiscovery(runId, caps).catch(() => {
     // syncFollowedDiscovery already records the error to sync_runs; nothing
     // more to do here. The catch keeps the promise from going unhandled.
   });

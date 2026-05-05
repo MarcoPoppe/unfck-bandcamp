@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackActionsBar from '@/components/TrackActionsBar';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import PlayedCheck from '@/components/PlayedCheck';
@@ -429,7 +428,6 @@ export default function WishlistClient({
           </>
         )}
       </div>
-      <StickyPlayerBar />
     </div>
   );
 }

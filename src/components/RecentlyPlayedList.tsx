@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo } from 'react';
-import StickyPlayerBar from './StickyPlayerBar';
 import type { TrackRowData } from './TrackRow';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
@@ -130,7 +129,6 @@ export default function RecentlyPlayedList({ plays }: { plays: PlayHistoryEntry[
           );
         })}
       </ul>
-      <StickyPlayerBar />
     </>
   );
 }

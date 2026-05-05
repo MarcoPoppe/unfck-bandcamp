@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackListSearch from '@/components/TrackListSearch';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
@@ -153,7 +152,6 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
           );
         })}
       </div>
-      <StickyPlayerBar />
     </>
   );
 }

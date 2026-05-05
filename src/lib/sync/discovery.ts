@@ -182,6 +182,11 @@ interface ProgressOpts {
    * back to the run they happened in. Optional — single-shot crawls
    * without progress tracking pass null. */
   runId?: number | null;
+  /** Per-call override for the release cap. Lets the user pick a
+   * smaller/larger crawl from the Discover page without restarting
+   * the app (the env var still acts as the global default). */
+  releasesPerArtist?: number;
+  releasesPerDigger?: number;
 }
 
 export async function syncFollowedArtistsDiscovery(
@@ -218,7 +223,7 @@ export async function syncFollowedArtistsDiscovery(
       // and let the on-demand artist-page lookup handle them.
       const releasesToCrawl = overview.releases
         .filter((r): r is typeof r & { bcUrl: string } => r.bcUrl != null)
-        .slice(0, getReleasesPerArtist());
+        .slice(0, opts?.releasesPerArtist ?? getReleasesPerArtist());
       // Bounded parallelism: 3 fetches in flight per batch, cooldown between.
       // Cuts total wallclock ~3x vs strictly-serial crawling.
       for (let bs = 0; bs < releasesToCrawl.length; bs += RELEASE_PARALLELISM) {
@@ -332,7 +337,7 @@ export async function syncFollowedDiggersDiscovery(
 
   const stmt = upsertDiscoveredTrackStmt();
   const now = new Date().toISOString();
-  const releaseLimit = getReleasesPerDigger();
+  const releaseLimit = opts?.releasesPerDigger ?? getReleasesPerDigger();
 
   // Pre-compute the set of release URLs we already imported (any prior run
   // of any source). We dedup per release-URL so an album with N tracks only
@@ -475,6 +480,7 @@ export async function syncFollowedDiggersDiscovery(
  */
 export async function syncFollowedDiscovery(
   runId?: number,
+  caps?: { releasesPerArtist?: number; releasesPerDigger?: number },
 ): Promise<DiscoverySyncResult> {
   const startedAt = Date.now();
   let totalReleases = 0;
@@ -483,12 +489,20 @@ export async function syncFollowedDiscovery(
     updateDiscoverySyncRun(runId, { items_synced: totalReleases + n });
   };
   try {
-    const a = await syncFollowedArtistsDiscovery({ onProgress, runId: runId ?? null });
+    const a = await syncFollowedArtistsDiscovery({
+      onProgress,
+      runId: runId ?? null,
+      releasesPerArtist: caps?.releasesPerArtist,
+    });
     totalReleases = a.releasesFetched;
     if (runId != null) {
       updateDiscoverySyncRun(runId, { items_synced: totalReleases });
     }
-    const d = await syncFollowedDiggersDiscovery({ onProgress, runId: runId ?? null });
+    const d = await syncFollowedDiggersDiscovery({
+      onProgress,
+      runId: runId ?? null,
+      releasesPerDigger: caps?.releasesPerDigger,
+    });
     totalReleases = a.releasesFetched + d.releasesFetched;
     if (runId != null) {
       updateDiscoverySyncRun(runId, {

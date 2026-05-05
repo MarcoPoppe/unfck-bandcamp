@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Virtuoso } from 'react-virtuoso';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts, useCurationShortcuts, useFilterShortcuts } from '@/lib/store/hooks';
@@ -344,7 +343,6 @@ export default function TracksClient({
           </>
         )}
       </div>
-      <StickyPlayerBar />
     </>
   );
 }

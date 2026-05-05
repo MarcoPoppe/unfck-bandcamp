@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import Tooltip from '@/components/Tooltip';
 import TrackListSearch from '@/components/TrackListSearch';
@@ -376,6 +375,21 @@ function TracksTab({
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [seenTracks, setSeenTracks] = useState<Set<number>>(() => loadTrackSeenIds());
   const [bulkBusy, setBulkBusy] = useState(false);
+  // Per-call discovery caps. localStorage-persisted so the user picks
+  // once and forgets. Defaults match the server's env-var defaults
+  // (12 per artist, 200 per curator) — chosen so a fresh user with a
+  // dozen follows finishes the first sync in under a minute.
+  const [perArtist, setPerArtist] = useState(12);
+  const [perDigger, setPerDigger] = useState(200);
+  useEffect(() => {
+    const a = Number(localStorage.getItem('unfck.discovery.per_artist'));
+    if (Number.isInteger(a) && a > 0) setPerArtist(a);
+    const d = Number(localStorage.getItem('unfck.discovery.per_digger'));
+    if (Number.isInteger(d) && d > 0) setPerDigger(d);
+  }, []);
+  function saveCap(key: 'per_artist' | 'per_digger', value: number) {
+    localStorage.setItem(`unfck.discovery.${key}`, String(value));
+  }
   useGlobalPlaybackShortcuts();
 
   // On mount, hydrate progress state from the server: if a sync was kicked
@@ -435,7 +449,10 @@ function TracksTab({
       const res = await fetch('/api/sync/discovery', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: '{}',
+        body: JSON.stringify({
+          releasesPerArtist: perArtist,
+          releasesPerDigger: perDigger,
+        }),
       });
       const json = (await res.json()) as {
         ok?: boolean;
@@ -572,6 +589,62 @@ function TracksTab({
     }
   }
 
+  const discoverControls = (
+    <div className="flex flex-wrap items-end gap-3">
+      <button
+        type="button"
+        onClick={refreshDiscovery}
+        disabled={syncing || followCount === 0}
+        title={
+          followCount === 0
+            ? 'Follow at least one artist, label, or curator first (Follows tab)'
+            : 'Crawl every followed source and pull in new releases'
+        }
+        className="rounded bg-accent px-4 py-2 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"
+      >
+        {syncing
+          ? progress && progress.itemsTotalKnown
+            ? `Crawling ${progress.itemsSynced}/${progress.itemsTotalKnown}…`
+            : `Crawling${progress ? ` ${progress.itemsSynced}` : ''}…`
+          : 'Discover'}
+      </button>
+      <label className="flex flex-col gap-1 text-xs text-fg-muted">
+        <span>Releases / artist</span>
+        <input
+          type="number"
+          min={1}
+          max={200}
+          value={perArtist}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (Number.isInteger(n) && n > 0) {
+              setPerArtist(n);
+              saveCap('per_artist', n);
+            }
+          }}
+          className="w-20 rounded border border-border bg-bg-base px-2 py-1 font-mono text-sm text-fg-primary focus:border-accent focus:outline-none"
+        />
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-fg-muted">
+        <span>Releases / curator</span>
+        <input
+          type="number"
+          min={1}
+          max={1000}
+          value={perDigger}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (Number.isInteger(n) && n > 0) {
+              setPerDigger(n);
+              saveCap('per_digger', n);
+            }
+          }}
+          className="w-20 rounded border border-border bg-bg-base px-2 py-1 font-mono text-sm text-fg-primary focus:border-accent focus:outline-none"
+        />
+      </label>
+    </div>
+  );
+
   if (tracks.length === 0) {
     return (
       <section className="rounded-lg border border-border bg-bg-surface p-6">
@@ -581,37 +654,41 @@ function TracksTab({
           <Link href="/discover?tab=follows" className="text-accent underline">
             Follows
           </Link>{' '}
-          tab, then trigger a discovery sync to see new releases. Curators
-          contribute the most-recent slice of their collection.
+          tab, then click <strong>Discover</strong> to crawl new releases.
+          Curators contribute the most-recent slice of their collection.
         </p>
+        <div className="mt-4">{discoverControls}</div>
+        {syncMessage && (
+          <p className="mt-3 text-xs text-fg-muted">{syncMessage}</p>
+        )}
+        {syncing && progress && (
+          <div className="mt-3">
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-elevated">
+              <div
+                className="h-full bg-accent transition-all"
+                style={{
+                  width: progress.itemsTotalKnown
+                    ? `${Math.min(100, (progress.itemsSynced / progress.itemsTotalKnown) * 100)}%`
+                    : '15%',
+                }}
+              />
+            </div>
+          </div>
+        )}
       </section>
     );
   }
 
   return (
     <>
-      <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
-        {syncMessage && (
-          <span className="mr-auto text-xs text-fg-muted">{syncMessage}</span>
-        )}
-        <HidePlayedToggle count={hiddenCount} />
-        <button
-          type="button"
-          onClick={refreshDiscovery}
-          disabled={syncing || followCount === 0}
-          title={
-            followCount === 0
-              ? 'Follow at least one artist, label, or curator first (Follows tab)'
-              : 'Crawl every followed source and pull in new releases'
-          }
-          className="rounded bg-accent px-3 py-1.5 text-sm font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:opacity-50"
-        >
-          {syncing
-            ? progress && progress.itemsTotalKnown
-              ? `Crawling ${progress.itemsSynced}/${progress.itemsTotalKnown}…`
-              : `Crawling${progress ? ` ${progress.itemsSynced}` : ''}…`
-            : 'Refresh discovery'}
-        </button>
+      <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
+        <div>{discoverControls}</div>
+        <div className="flex items-center gap-2">
+          {syncMessage && (
+            <span className="text-xs text-fg-muted">{syncMessage}</span>
+          )}
+          <HidePlayedToggle count={hiddenCount} />
+        </div>
       </div>
       {syncing && progress && (
         <div className="mb-3">
@@ -698,7 +775,6 @@ function TracksTab({
           </div>
         </>
       )}
-      <StickyPlayerBar />
     </>
   );
 }

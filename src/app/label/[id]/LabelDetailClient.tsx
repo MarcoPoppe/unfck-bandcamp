@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackActionsBar from '@/components/TrackActionsBar';
 import FollowButton from '@/components/FollowButton';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
@@ -304,7 +303,6 @@ export default function LabelDetailClient({ label, activity, groups }: Props) {
         )}
       </section>
 
-      <StickyPlayerBar />
     </>
   );
 }

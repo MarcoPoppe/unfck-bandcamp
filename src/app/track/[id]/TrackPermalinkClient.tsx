@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import TrackRow, { type TrackRowData } from '@/components/TrackRow';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackActionsBar from '@/components/TrackActionsBar';
 import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
@@ -1179,7 +1178,6 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
         )}
       </section>
 
-      <StickyPlayerBar />
     </>
   );
 }

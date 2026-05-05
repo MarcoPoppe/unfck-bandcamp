@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import UnfckBandcampLogo from './UnfckBandcampLogo';
 import Tooltip from './Tooltip';
 import UpdaterBanner from './UpdaterBanner';
+import StickyPlayerBar from './StickyPlayerBar';
 import { usePlayerStore } from '@/lib/store/player';
 import { isTauri } from '@/lib/tauri/client';
 
@@ -360,6 +361,14 @@ export default function AppShell({
         )}
       </header>
       {children}
+      {/*
+        Single, persistent player mount. Lives in the shell so navigation
+        between pages doesn't unmount the wavesurfer instance — the
+        player keeps its own audio element across route changes, which
+        prevents the "audio resumes after navigation" bug we'd see when
+        each page mounted its own copy.
+      */}
+      <StickyPlayerBar />
     </>
   );
 }

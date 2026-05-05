@@ -3,7 +3,6 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import StickyPlayerBar from '@/components/StickyPlayerBar';
 import TrackActionsBar from '@/components/TrackActionsBar';
 import PlayedCheck from '@/components/PlayedCheck';
 import PlaylistMembershipBadge from '@/components/PlaylistMembershipBadge';
@@ -232,7 +231,6 @@ export default function HistoryClient({ plays }: { plays: HistoryRow[] }) {
           ))}
         </div>
       )}
-      <StickyPlayerBar />
     </>
   );
 }
