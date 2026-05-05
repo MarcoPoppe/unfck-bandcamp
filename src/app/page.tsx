@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { getStoredAuth } from '@/lib/auth/store';
+import { getCrawlTargetUsername, getStoredAuth } from '@/lib/auth/store';
 import { getLatestSyncRun, getOwnedItemCount } from '@/lib/sync/owned';
 import { getTrackCount } from '@/lib/sync/tracks';
 import { getDiscoveredTrackCount } from '@/lib/sync/discovery';
@@ -56,7 +56,7 @@ export default function HomePage() {
       <header className="mb-8 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">
-            Hi <span className="text-accent">{auth.username}</span>
+            Hi <span className="text-accent">{getCrawlTargetUsername() ?? auth.username}</span>
           </h1>
           <p className="mt-1 text-fg-secondary">
             {trackCount} tracks · {ownedCount} releases · last sync {formatDateTime(lastOwnedSync?.startedAt) || '—'}

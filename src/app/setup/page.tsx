@@ -5,6 +5,7 @@ import {
   getStoredMainAuth,
 } from '@/lib/auth/store';
 import { getLatestSyncRun, getOwnedItemCount } from '@/lib/sync/owned';
+import pkg from '../../../package.json' with { type: 'json' };
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,7 @@ export default function SetupPage() {
     crawlTargetUsername: getCrawlTargetUsername(),
     ownedCount: getOwnedItemCount(),
     lastSync: getLatestSyncRun('owned'),
+    appVersion: pkg.version as string,
   };
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">

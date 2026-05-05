@@ -113,7 +113,9 @@ export default function ShortcutsEditor() {
       )}
 
       <div className="mt-5 space-y-5">
-        {(Object.keys(grouped) as Array<'transport' | 'curation' | 'filter'>).map((group) => (
+        {(Object.keys(grouped) as Array<'transport' | 'curation' | 'filter'>)
+          .filter((group) => grouped[group].length > 0)
+          .map((group) => (
           <div key={group}>
             <div className="mb-2 text-xs uppercase tracking-wide text-fg-muted">
               {GROUP_LABELS[group]}

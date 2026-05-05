@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { isTauri, signInWithBandcamp } from '@/lib/tauri/client';
+import AboutPanel from '@/components/AboutPanel';
 import ShortcutsEditor from '@/components/ShortcutsEditor';
 import PreferencesEditor from '@/components/PreferencesEditor';
 import DatabaseInspector from '@/components/DatabaseInspector';
@@ -31,6 +32,7 @@ interface InitialState {
   crawlTargetUsername: string | null;
   ownedCount: number;
   lastSync: SyncRun | null;
+  appVersion: string;
 }
 
 type Role = 'crawler' | 'main';
@@ -722,6 +724,7 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
           </button>
         </section>
       )}
+      <AboutPanel version={initial.appVersion} />
       <DiagnosticsPanel />
       <DatabaseInspector />
     </div>

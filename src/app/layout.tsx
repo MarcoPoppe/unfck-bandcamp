@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import AppShell from '@/components/AppShell';
-import { getStoredAuth } from '@/lib/auth/store';
+import { getCrawlTargetUsername, getStoredAuth } from '@/lib/auth/store';
 import { THEME_BOOT_SCRIPT } from '@/lib/settings/theme';
 
 export const metadata: Metadata = {
@@ -13,6 +13,10 @@ export const dynamic = 'force-dynamic';
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const auth = getStoredAuth();
+  // When a main account is linked, that's the identity the user thinks
+  // of themselves as — not the burner. Avatar API already prefers it;
+  // keep the header username consistent.
+  const displayUsername = getCrawlTargetUsername() ?? auth?.username ?? null;
   // Inline boot script: applies the user's saved theme to <html> before
   // first paint to avoid a flash of dark-then-light. Content is a fixed
   // hard-coded constant (THEME_BOOT_SCRIPT), no untrusted input involved.
@@ -23,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={bootScript} />
       </head>
       <body className="bg-bg-base text-fg-primary min-h-screen antialiased">
-        <AppShell auth={auth ? { username: auth.username } : null}>{children}</AppShell>
+        <AppShell auth={auth && displayUsername ? { username: displayUsername } : null}>{children}</AppShell>
       </body>
     </html>
   );
