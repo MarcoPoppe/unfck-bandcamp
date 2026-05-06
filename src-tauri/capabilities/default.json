@@ -1,29 +1,23 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for the main window: core APIs, updater, process control, and webview cookie access for the embedded Bandcamp login flow.",
+  "description": "Main window capability: core IPC, updater, process restart, embedded-login child windows, Node sidecar.",
   "windows": [
-    "main",
-    "bc-login-*"
+    "main"
   ],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
     "core:webview:allow-webview-close",
-    "core:webview:allow-webview-show",
-    "core:webview:allow-webview-hide",
     "core:window:allow-set-focus",
     "core:window:allow-hide",
     "core:window:allow-show",
     "core:window:allow-close",
-    "core:event:allow-listen",
-    "core:event:allow-emit",
     "updater:default",
     "updater:allow-check",
-    "updater:allow-download",
-    "updater:allow-install",
     "updater:allow-download-and-install",
     "process:default",
+    "process:allow-restart",
     "shell:default",
     {
       "identifier": "shell:allow-execute",

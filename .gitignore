@@ -42,3 +42,8 @@ src-tauri/gen/
 .idea/
 .DS_Store
 Thumbs.db
+
+# internal planning docs — kept local, not for the public repo
+PLAN.md
+Progress.md
+docs/specs/

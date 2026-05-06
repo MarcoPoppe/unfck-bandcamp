@@ -62,19 +62,22 @@ pub fn run() {
 mod commands {
     use std::time::Duration;
     use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+    use url::Url;
 
     /// Spawns a child WebView at bandcamp.com/login, polls the URL until
     /// the user has signed in (post-login URL contains the user's
     /// username), then reads the session cookies and returns them so the
     /// setup wizard can pass them to /api/auth/validate.
     ///
-    /// Status: scaffolded with the navigation polling loop. The
-    /// `cookies_for_url`-style API to actually pull HttpOnly session
-    /// cookies out of the WebView is platform-specific (WebView2 on
-    /// Windows, WKWebView on macOS, WebKitGTK on Linux) and Tauri 2's
-    /// stable surface for it is still in flux. The wizard handles a
-    /// returned-empty cookieString gracefully and falls back to the
-    /// paste flow, so this stub is safe to ship.
+    /// We intentionally use Tauri's `cookies_for_url` API instead of
+    /// hand-rolling raw platform bindings in this command. On Tauri 2.11
+    /// that API already returns HTTP-only cookies and internally delegates
+    /// to the native store on each platform:
+    /// - Windows: WebView2's `ICoreWebView2CookieManager::GetCookies`
+    /// - macOS: `WKWebsiteDataStore` -> `WKHTTPCookieStore::getAllCookies`
+    ///
+    /// The command stays async because Tauri documents Windows cookie
+    /// reads as unsafe from synchronous commands / event handlers.
     #[tauri::command]
     pub async fn open_bandcamp_login(
         app: AppHandle,
@@ -143,12 +146,11 @@ mod commands {
             tokio::time::sleep(Duration::from_millis(500)).await;
         }
 
-        // TODO: pull HttpOnly session cookies out of the WebView's
-        // cookie store. Once Tauri exposes a stable cross-platform API
-        // for that, populate `cookie_string` here and the wizard will
-        // forward it to /api/auth/validate. Until then we return an
-        // empty string and the wizard surfaces a polite fallback hint.
-        let cookie_string = String::new();
+        let cookie_string = if let Some(w) = app.get_webview_window(&label) {
+            read_bandcamp_cookie_string(&w)?
+        } else {
+            return Err("Login window disappeared before cookies could be read.".into());
+        };
         if let Some(w) = app.get_webview_window(&label) {
             w.close().ok();
         }
@@ -166,6 +168,77 @@ mod commands {
         pub fan_id: Option<u64>,
         pub username: Option<String>,
         pub role: String,
+    }
+
+    /// Read the authenticated Bandcamp cookies from the native webview
+    /// cookie store after login completes.
+    ///
+    /// The implementation is compile-guarded so only the supported desktop
+    /// targets for this app are built. Both paths currently use Tauri's
+    /// stable cookie API, which is already backed by the native WebView2 /
+    /// WKWebView cookie managers listed above.
+    #[cfg(target_os = "windows")]
+    fn read_bandcamp_cookie_string(
+        window: &tauri::WebviewWindow,
+    ) -> Result<String, String> {
+        collect_bandcamp_cookie_string(window)
+    }
+
+    /// Read the authenticated Bandcamp cookies from the native webview
+    /// cookie store after login completes.
+    #[cfg(target_os = "macos")]
+    fn read_bandcamp_cookie_string(
+        window: &tauri::WebviewWindow,
+    ) -> Result<String, String> {
+        collect_bandcamp_cookie_string(window)
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    fn read_bandcamp_cookie_string(
+        _window: &tauri::WebviewWindow,
+    ) -> Result<String, String> {
+        Err("Bandcamp cookie extraction is only implemented for Windows and macOS.".into())
+    }
+
+    fn collect_bandcamp_cookie_string(
+        window: &tauri::WebviewWindow,
+    ) -> Result<String, String> {
+        let url = Url::parse("https://bandcamp.com/")
+            .map_err(|e| format!("failed to build Bandcamp cookie URL: {e}"))?;
+        let cookies = window
+            .cookies_for_url(url)
+            .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))?;
+
+        let mut pairs: Vec<(u8, String)> = cookies
+            .into_iter()
+            .filter(|cookie| {
+                cookie
+                    .domain()
+                    .map(is_bandcamp_cookie_domain)
+                    .unwrap_or(false)
+            })
+            .map(|cookie| {
+                let priority = match cookie.name() {
+                    "identity" => 0,
+                    "session" => 1,
+                    _ => 2,
+                };
+                (priority, format!("{}={}", cookie.name(), cookie.value()))
+            })
+            .collect();
+
+        pairs.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+
+        Ok(pairs
+            .into_iter()
+            .map(|(_, pair)| pair)
+            .collect::<Vec<_>>()
+            .join("; "))
+    }
+
+    fn is_bandcamp_cookie_domain(domain: &str) -> bool {
+        let domain = domain.trim_start_matches('.');
+        domain == "bandcamp.com" || domain.ends_with(".bandcamp.com")
     }
 
     /// Returns whether the user has opted in to "X minimizes to tray".
