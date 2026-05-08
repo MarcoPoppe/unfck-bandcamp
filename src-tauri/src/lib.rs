@@ -116,13 +116,9 @@ mod commands {
             if let Some(w) = app.get_webview_window(&label) {
                 let url = w.url().map_err(|e| e.to_string())?;
                 let s = url.to_string();
-                if s.starts_with("https://bandcamp.com/")
-                    && !s.contains("/login")
-                    && !s.contains("/signup")
-                    && !s.contains("/forgot")
-                {
+                if s.starts_with("https://bandcamp.com/") {
                     if let Some(rest) = s.strip_prefix("https://bandcamp.com/") {
-                        let user = rest
+                        let candidate = rest
                             .split('/')
                             .next()
                             .unwrap_or("")
@@ -130,8 +126,8 @@ mod commands {
                             .next()
                             .unwrap_or("")
                             .trim();
-                        if !user.is_empty() {
-                            detected_username = Some(user.to_string());
+                        if is_user_profile_segment(candidate) {
+                            detected_username = Some(candidate.to_string());
                             break;
                         }
                     }
@@ -201,11 +197,23 @@ mod commands {
     fn collect_bandcamp_cookie_string(
         window: &tauri::WebviewWindow,
     ) -> Result<String, String> {
-        let cookies = read_bandcamp_cookies(window)?;
+        let (cookies, source_was_url_filtered) = read_bandcamp_cookies(window)?;
 
+        // When read_bandcamp_cookies returned a URL-filtered list,
+        // every cookie is already known to apply to bandcamp.com — the
+        // tauri runtime did the matching already. Re-filtering by
+        // cookie.domain() then drops anything whose Set-Cookie header
+        // didn't include an explicit Domain= directive (which on
+        // Bandcamp includes `identity` and `js_logged_in`, the only two
+        // cookies that actually matter here). The extra domain filter
+        // only kicks in for the unfiltered fallback path
+        // (`window.cookies()`), where it's still load-bearing.
         let mut pairs: Vec<(u8, String)> = cookies
             .into_iter()
             .filter(|cookie| {
+                if source_was_url_filtered {
+                    return true;
+                }
                 cookie
                     .domain()
                     .map(is_bandcamp_cookie_domain)
@@ -232,7 +240,7 @@ mod commands {
 
     fn read_bandcamp_cookies(
         window: &tauri::WebviewWindow,
-    ) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
+    ) -> Result<(Vec<tauri::webview::Cookie<'static>>, bool), String> {
         log::info!(
             "[cookie-diag] reading cookies from window label={} url={:?}",
             window.label(),
@@ -251,7 +259,7 @@ mod commands {
                         names
                     );
                     if !cookies.is_empty() {
-                        return Ok(cookies);
+                        return Ok((cookies, true));
                     }
                 }
                 Err(e) => {
@@ -271,7 +279,7 @@ mod commands {
                     names,
                     domains
                 );
-                Ok(cookies)
+                Ok((cookies, false))
             }
             Err(e) => {
                 log::error!("[cookie-diag] window.cookies() errored: {}", e);
@@ -283,6 +291,40 @@ mod commands {
     fn is_bandcamp_cookie_domain(domain: &str) -> bool {
         let domain = domain.trim_start_matches('.');
         domain == "bandcamp.com" || domain.ends_with(".bandcamp.com")
+    }
+
+    /// Whether `bandcamp.com/<segment>` looks like a fan profile URL
+    /// (i.e. the user has actually signed in and Bandcamp is showing
+    /// them their own page) versus one of the many top-level routes
+    /// Bandcamp also serves under the same prefix. Earlier versions
+    /// of this command treated anything that wasn't `/login`,
+    /// `/signup`, or `/forgot` as "the user just logged in", which
+    /// meant `/discover`, `/logout`, `/album/...`, etc. were all
+    /// reported as the username — the cookie read then ran on a
+    /// session that didn't belong to a logged-in fan.
+    ///
+    /// Bandcamp usernames are alphanumeric + underscore; everything
+    /// else here is a reserved app route. We allow `_` and digits to
+    /// avoid rejecting valid usernames like `dj_2pac`.
+    fn is_user_profile_segment(segment: &str) -> bool {
+        if segment.is_empty() {
+            return false;
+        }
+        const RESERVED: &[&str] = &[
+            "login", "signup", "forgot", "logout",
+            "discover", "feed", "search", "tag", "tags",
+            "album", "track", "merch", "subdomain",
+            "artists", "labels", "fan", "mobile",
+            "api", "static", "img", "help", "terms",
+            "privacy", "about", "campaign", "pro",
+            "tools", "settings",
+        ];
+        if RESERVED.contains(&segment) {
+            return false;
+        }
+        segment
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
     }
 
     /// Returns whether the user has opted in to "X minimizes to tray".
@@ -560,6 +602,16 @@ mod sidecar {
         // machine — Marco's friends just install + click + go.
         let db_path_str = data_dir.join("unfck.db").to_string_lossy().to_string();
         let data_dir_str = data_dir.to_string_lossy().to_string();
+        // .app_secret holds the AES-256-GCM key for the auth-cookie
+        // column. It used to default to <cwd>/data/.app_secret, where
+        // <cwd> = standalone tree under the program-files install
+        // dir — that gets wiped on every NSIS uninstall, taking the
+        // key with it and rendering the surviving auth rows in the
+        // user-data DB undecryptable. Pinning the path next to the
+        // DB itself (in app_data_dir, which the uninstaller leaves
+        // alone unless the user explicitly opts in) keeps logins
+        // surviving reinstalls.
+        let secret_path_str = data_dir.join(".app_secret").to_string_lossy().to_string();
         // CWD must be the standalone tree itself: server.js does
         // `require('./.next/server/...')` style relative loads, which
         // only resolve correctly when Node is running with that
@@ -573,6 +625,7 @@ mod sidecar {
             .env("HOSTNAME", "127.0.0.1")
             .env("DATABASE_PATH", db_path_str)
             .env("UNFCK_DATA_DIR", data_dir_str)
+            .env("UNFCK_SECRET_PATH", secret_path_str)
             .spawn()?;
 
         // Pipe sidecar stdout/stderr into our log so we can diagnose

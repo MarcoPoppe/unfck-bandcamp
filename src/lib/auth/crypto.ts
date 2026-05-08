@@ -35,6 +35,25 @@ function loadOrCreateAppSecret(): Buffer {
     cachedKey = key;
     return key;
   }
+
+  // One-shot migration from the legacy default location (<cwd>/data/.app_secret).
+  // The Tauri sidecar used to land that file inside the program-files install
+  // tree, which the NSIS uninstaller wipes on every reinstall — the encrypted
+  // auth rows survived in app_data_dir but the key didn't. Now the key lives
+  // next to the DB. If a user upgrades into this build, copy the old key over
+  // first so their existing logins still decrypt.
+  const legacyPath = resolve(process.cwd(), 'data', '.app_secret');
+  if (legacyPath !== path && existsSync(legacyPath)) {
+    const raw = readFileSync(legacyPath, 'utf8').trim();
+    const key = Buffer.from(raw, 'base64');
+    if (key.length === KEY_LEN) {
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, raw, { mode: 0o600 });
+      cachedKey = key;
+      return key;
+    }
+  }
+
   mkdirSync(dirname(path), { recursive: true });
   const fresh = randomBytes(KEY_LEN);
   writeFileSync(path, fresh.toString('base64'), { mode: 0o600 });

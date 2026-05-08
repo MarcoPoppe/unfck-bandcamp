@@ -504,6 +504,7 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
             {message.text}
           </div>
         )}
+        {tauriRuntime && <DiagnosticsPanel />}
       </div>
     );
   }
