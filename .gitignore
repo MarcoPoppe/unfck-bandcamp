@@ -47,3 +47,6 @@ Thumbs.db
 PLAN.md
 Progress.md
 docs/specs/
+docs/screenshots/
+docs/*.pdf
+docs/*.html
