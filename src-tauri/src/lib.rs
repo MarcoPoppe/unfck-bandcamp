@@ -69,15 +69,11 @@ mod commands {
     /// username), then reads the session cookies and returns them so the
     /// setup wizard can pass them to /api/auth/validate.
     ///
-    /// We intentionally use Tauri's `cookies_for_url` API instead of
-    /// hand-rolling raw platform bindings in this command. On Tauri 2.11
-    /// that API already returns HTTP-only cookies and internally delegates
-    /// to the native store on each platform:
-    /// - Windows: WebView2's `ICoreWebView2CookieManager::GetCookies`
-    /// - macOS: `WKWebsiteDataStore` -> `WKHTTPCookieStore::getAllCookies`
-    ///
-    /// The command stays async because Tauri documents Windows cookie
-    /// reads as unsafe from synchronous commands / event handlers.
+    /// We intentionally keep cookie extraction on Tauri's native cookie
+    /// APIs. On Tauri 2.11, `cookies_for_url` and `cookies` already
+    /// delegate to the platform stores, including HTTP-only cookies, and
+    /// Tauri documents Windows cookie reads as unsafe from synchronous
+    /// commands / event handlers, so this command stays async.
     #[tauri::command]
     pub async fn open_bandcamp_login(
         app: AppHandle,
@@ -203,11 +199,7 @@ mod commands {
     fn collect_bandcamp_cookie_string(
         window: &tauri::WebviewWindow,
     ) -> Result<String, String> {
-        let url = Url::parse("https://bandcamp.com/")
-            .map_err(|e| format!("failed to build Bandcamp cookie URL: {e}"))?;
-        let cookies = window
-            .cookies_for_url(url)
-            .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))?;
+        let cookies = read_bandcamp_cookies(window)?;
 
         let mut pairs: Vec<(u8, String)> = cookies
             .into_iter()
@@ -234,6 +226,25 @@ mod commands {
             .map(|(_, pair)| pair)
             .collect::<Vec<_>>()
             .join("; "))
+    }
+
+    fn read_bandcamp_cookies(
+        window: &tauri::WebviewWindow,
+    ) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
+        for url in ["https://bandcamp.com/", "https://www.bandcamp.com/"] {
+            let url = Url::parse(url)
+                .map_err(|e| format!("failed to build Bandcamp cookie URL: {e}"))?;
+            let cookies = window
+                .cookies_for_url(url)
+                .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))?;
+            if !cookies.is_empty() {
+                return Ok(cookies);
+            }
+        }
+
+        window
+            .cookies()
+            .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))
     }
 
     fn is_bandcamp_cookie_domain(domain: &str) -> bool {

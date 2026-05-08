@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "updater",
+  "description": "Standalone capability for the updater + process plugins. Split out from default.json on the suspicion that bundling all plugin permissions into one capability lets some permissions silently drop at build time on some Tauri 2.11 / plugin-updater 2.10 combinations.",
+  "windows": ["main"],
+  "permissions": [
+    "updater:default",
+    "updater:allow-check",
+    "updater:allow-download-and-install",
+    "process:default",
+    "process:allow-restart"
+  ]
+}

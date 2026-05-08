@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Unfck Bandcamp",
-  "version": "2.4.16",
+  "version": "2.4.17",
   "identifier": "com.unfck.bandcamp",
   "build": {
     "frontendDist": "../public/tauri-shell",
@@ -29,7 +29,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis"],
+    "targets": [
+      "dmg",
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -41,7 +44,9 @@
     "resources": [
       "../.next/standalone/**/*"
     ],
-    "externalBin": ["binaries/node"]
+    "externalBin": [
+      "binaries/node"
+    ]
   },
   "plugins": {
     "updater": {
