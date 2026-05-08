@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { diagnoseUpdaterFromRust, isTauri, tauriLog } from '@/lib/tauri/client';
 
 interface SchemaIssue {
   table: string;
@@ -30,6 +31,73 @@ export default function DiagnosticsPanel() {
   const [busy, setBusy] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [tauri, setTauri] = useState(false);
+  const [diagBusy, setDiagBusy] = useState(false);
+  const [diagDone, setDiagDone] = useState(false);
+
+  useEffect(() => {
+    setTauri(isTauri());
+  }, []);
+
+  // Run the desktop-side ACL + cookie diagnostics. Everything is piped
+  // into the Tauri log file (%LOCALAPPDATA%/com.unfck.bandcamp/logs)
+  // so the developer can read it from disk afterwards without asking
+  // the user to copy DevTools output.
+  async function runDesktopDiagnostics() {
+    setDiagBusy(true);
+    setDiagDone(false);
+    try {
+      await tauriLog('info', '=== diagnostics run start ===');
+
+      // 1) Direct Rust-side updater check, bypassing the frontend ACL.
+      try {
+        const result = await diagnoseUpdaterFromRust();
+        await tauriLog('info', `rust-side updater.check: ${result}`);
+      } catch (e) {
+        await tauriLog('error', `rust-side updater.check threw: ${String(e)}`);
+      }
+
+      // 2) Frontend invoke of the same plugin command — this is the path
+      //    that's been failing with "not allowed by ACL".
+      try {
+        // Direct internals call, since the @tauri-apps/plugin-updater
+        // import has its own caching layer that may swallow context.
+        const w = window as unknown as {
+          __TAURI_INTERNALS__?: {
+            invoke: (
+              cmd: string,
+              args?: Record<string, unknown>,
+            ) => Promise<unknown>;
+          };
+        };
+        const internals = w.__TAURI_INTERNALS__;
+        if (!internals) {
+          await tauriLog('error', 'frontend: __TAURI_INTERNALS__ missing');
+        } else {
+          try {
+            const r = await internals.invoke('plugin:updater|check');
+            await tauriLog(
+              'info',
+              `frontend invoke plugin:updater|check ok: ${JSON.stringify(r).slice(0, 300)}`,
+            );
+          } catch (e) {
+            await tauriLog(
+              'error',
+              `frontend invoke plugin:updater|check failed: ${String(e)}`,
+            );
+          }
+        }
+      } catch (e) {
+        await tauriLog('error', `frontend updater probe threw: ${String(e)}`);
+      }
+
+      await tauriLog('info', '=== diagnostics run end ===');
+      setDiagDone(true);
+      setTimeout(() => setDiagDone(false), 5000);
+    } finally {
+      setDiagBusy(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +174,33 @@ export default function DiagnosticsPanel() {
       {error && (
         <div className="mt-3 rounded border border-border-danger bg-bg-danger p-3 text-xs text-fg-danger">
           {error}
+        </div>
+      )}
+
+      {tauri && (
+        <div className="mt-4 rounded border border-border bg-bg-elevated p-3 text-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span>
+              <strong>Desktop diagnostics</strong> — runs the ACL + updater
+              probes and writes everything into the Tauri log file.
+            </span>
+            <button
+              type="button"
+              onClick={runDesktopDiagnostics}
+              disabled={diagBusy}
+              className="rounded border border-border bg-bg-surface px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
+            >
+              {diagBusy ? 'Running…' : diagDone ? 'Logged ✓' : 'Run desktop diagnostics'}
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-fg-secondary">
+            After running, the log file is at
+            {' '}
+            <span className="font-mono">
+              %LOCALAPPDATA%\com.unfck.bandcamp\logs\Unfck Bandcamp.log
+            </span>
+            .
+          </p>
         </div>
       )}
     </section>

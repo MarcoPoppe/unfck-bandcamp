@@ -105,6 +105,29 @@ export async function checkForAppUpdate(): Promise<UpdateInfo | null> {
   }
 }
 
+/** Pipe a string into the Tauri log so we can read it from
+ * %LOCALAPPDATA%/com.unfck.bandcamp/logs without asking the user to
+ * paste DevTools output. SSR-safe + no-op outside Tauri. */
+export async function tauriLog(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>('log_from_frontend', { level, message });
+  } catch {
+    // best effort
+  }
+}
+
+/** Diagnostic: ask Rust to call the updater plugin directly. If this
+ * succeeds but the frontend `invoke('plugin:updater|check')` fails with
+ * an ACL error, we know the plugin is fine and the bug is in the
+ * capability layer. */
+export async function diagnoseUpdaterFromRust(): Promise<string> {
+  return invoke<string>('diagnose_updater');
+}
+
 /** Downloads + installs the pending update + restarts the app. */
 export async function applyAppUpdate(): Promise<void> {
   if (!isTauri()) return;

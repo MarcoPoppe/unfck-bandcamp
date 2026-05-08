@@ -12,6 +12,8 @@ pub fn run() {
             commands::wait_for_server,
             commands::get_minimize_to_tray,
             commands::set_minimize_to_tray,
+            commands::diagnose_updater,
+            commands::log_from_frontend,
         ])
         .on_window_event(|window, event| {
             // Tray-on-close is decided in Rust because the JS-side
@@ -231,20 +233,51 @@ mod commands {
     fn read_bandcamp_cookies(
         window: &tauri::WebviewWindow,
     ) -> Result<Vec<tauri::webview::Cookie<'static>>, String> {
+        log::info!(
+            "[cookie-diag] reading cookies from window label={} url={:?}",
+            window.label(),
+            window.url().ok().map(|u| u.to_string())
+        );
         for url in ["https://bandcamp.com/", "https://www.bandcamp.com/"] {
-            let url = Url::parse(url)
+            let parsed = Url::parse(url)
                 .map_err(|e| format!("failed to build Bandcamp cookie URL: {e}"))?;
-            let cookies = window
-                .cookies_for_url(url)
-                .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))?;
-            if !cookies.is_empty() {
-                return Ok(cookies);
+            match window.cookies_for_url(parsed) {
+                Ok(cookies) => {
+                    let names: Vec<&str> = cookies.iter().map(|c| c.name()).collect();
+                    log::info!(
+                        "[cookie-diag] cookies_for_url({}) returned {} cookies: {:?}",
+                        url,
+                        cookies.len(),
+                        names
+                    );
+                    if !cookies.is_empty() {
+                        return Ok(cookies);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("[cookie-diag] cookies_for_url({}) errored: {}", url, e);
+                }
             }
         }
 
-        window
-            .cookies()
-            .map_err(|e| format!("failed to read Bandcamp cookies from webview: {e}"))
+        match window.cookies() {
+            Ok(cookies) => {
+                let names: Vec<&str> = cookies.iter().map(|c| c.name()).collect();
+                let domains: Vec<Option<&str>> =
+                    cookies.iter().map(|c| c.domain()).collect();
+                log::info!(
+                    "[cookie-diag] window.cookies() returned {} cookies: names={:?} domains={:?}",
+                    cookies.len(),
+                    names,
+                    domains
+                );
+                Ok(cookies)
+            }
+            Err(e) => {
+                log::error!("[cookie-diag] window.cookies() errored: {}", e);
+                Err(format!("failed to read Bandcamp cookies from webview: {e}"))
+            }
+        }
     }
 
     fn is_bandcamp_cookie_domain(domain: &str) -> bool {
@@ -266,6 +299,58 @@ mod commands {
     #[tauri::command]
     pub fn set_minimize_to_tray(app: AppHandle, value: bool) -> Result<(), String> {
         super::tray::set_minimize_to_tray(&app, value).map_err(|e| e.to_string())
+    }
+
+    /// Diagnostic: invoke the updater plugin's check() directly from
+    /// Rust, bypassing the frontend ACL layer. If this works while
+    /// `__TAURI_INTERNALS__.invoke('plugin:updater|check')` from the
+    /// frontend fails with "not allowed by ACL", we know the plugin
+    /// itself is fine and the bug is in the capability registration
+    /// or window-resolution layer that the frontend invoke goes
+    /// through.
+    #[tauri::command]
+    pub async fn diagnose_updater(app: AppHandle) -> Result<String, String> {
+        use tauri_plugin_updater::UpdaterExt;
+        log::info!("[updater-diag] starting direct Rust-side updater.check()");
+        let updater = match app.updater() {
+            Ok(u) => u,
+            Err(e) => {
+                let msg = format!("updater() builder failed: {e}");
+                log::error!("[updater-diag] {msg}");
+                return Err(msg);
+            }
+        };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let msg = format!(
+                    "update available: version={} current={}",
+                    update.version, update.current_version
+                );
+                log::info!("[updater-diag] {msg}");
+                Ok(msg)
+            }
+            Ok(None) => {
+                log::info!("[updater-diag] no update available (latest already installed)");
+                Ok("no update available".into())
+            }
+            Err(e) => {
+                let msg = format!("check() errored: {e}");
+                log::error!("[updater-diag] {msg}");
+                Err(msg)
+            }
+        }
+    }
+
+    /// Diagnostic: pipe a frontend log line into the Tauri log file so
+    /// the developer can read the user's diagnostic output without
+    /// asking them to open DevTools and paste the console.
+    #[tauri::command]
+    pub fn log_from_frontend(level: String, message: String) {
+        match level.as_str() {
+            "error" => log::error!("[frontend] {message}"),
+            "warn" => log::warn!("[frontend] {message}"),
+            _ => log::info!("[frontend] {message}"),
+        }
     }
 
     /// Polls the loopback port until the bundled Next.js sidecar is

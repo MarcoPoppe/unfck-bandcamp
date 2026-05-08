@@ -129,7 +129,7 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
         text:
           err instanceof Error
             ? `Embedded sign-in failed: ${err.message}`
-            : 'Embedded sign-in failed.',
+            : `Embedded sign-in failed: ${String(err)}`,
       });
     } finally {
       setValidating(null);
