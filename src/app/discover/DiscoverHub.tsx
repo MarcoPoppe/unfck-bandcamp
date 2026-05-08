@@ -1313,14 +1313,24 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
       } else {
         const seconds = ((json.durationMs ?? 0) / 1000).toFixed(1);
         const errCount = json.errors?.length ?? 0;
+        const itemsCrawled = json.itemsCrawled ?? 0;
+        const newCurators = json.diggersWritten ?? 0;
         const sourceLabel =
           source === 'wishlist'
-            ? 'wishlist tracks'
+            ? `${itemsCrawled} wishlist track${itemsCrawled === 1 ? '' : 's'}`
             : source === 'playlist'
-              ? `playlist "${playlists.find((p) => p.id === playlistId)?.name ?? '?'}"`
-              : 'library releases';
+              ? `${itemsCrawled} track${itemsCrawled === 1 ? '' : 's'} of playlist "${playlists.find((p) => p.id === playlistId)?.name ?? '?'}"`
+              : `${itemsCrawled} library release${itemsCrawled === 1 ? '' : 's'}`;
+        // diggersWritten is *new* curators only — already-known matches get
+        // re-stamped without a row insert. Saying "0 curators found" when the
+        // list below shows 47 confused users; spell out that the 0 is the
+        // delta and known-curators are still ranked.
+        const curatorsBlurb =
+          newCurators === 0
+            ? 'no new curators (already-known matches re-ranked)'
+            : `${newCurators} new curator${newCurators === 1 ? '' : 's'}`;
         setMessage(
-          `Scanned ${json.itemsCrawled ?? 0} ${sourceLabel}, ${json.collectorsSeen ?? 0} collectors, ${json.diggersWritten ?? 0} curators found in ${seconds}s` +
+          `Scanned ${sourceLabel}, ${json.collectorsSeen ?? 0} collectors, ${curatorsBlurb} in ${seconds}s` +
             (errCount > 0 ? ` (${errCount} errors)` : ''),
         );
         // Fresh scan → wipe the seen-set so previously-dismissed curators
@@ -1457,9 +1467,23 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
       )}
 
       {(() => {
+        // Scope the visible curators to the source the user picked above.
+        // Without this filter, switching the source dropdown to "playlist
+        // X" still showed curators whose match was last computed against
+        // the library or wishlist scan, with sample-titles that aren't in
+        // the chosen playlist at all.
+        const matchesSource = (d: typeof curators[number]) => {
+          if (d.lastSource == null) return true;
+          if (d.lastSource !== source) return false;
+          if (source === 'playlist' && d.lastSourcePlaylistId !== playlistId) {
+            return false;
+          }
+          return true;
+        };
         const visibleDiggers = curators.filter((d) => {
           if (seen.has(d.diggerId)) return false;
           if (hideFollowed && d.isFollowed) return false;
+          if (!matchesSource(d)) return false;
           return true;
         });
         const allSelected =

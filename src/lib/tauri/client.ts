@@ -80,24 +80,40 @@ export async function setMinimizeToTray(value: boolean): Promise<void> {
 }
 
 /** Triggers the updater plugin to check for a new release. Returns null
- * when no update is available. */
+ * when no update is available.
+ *
+ * v2.4.20 routes this through our own `check_for_updates` Tauri command
+ * instead of the plugin's bundled `plugin:updater|check` JS API. The
+ * plugin path keeps getting rejected by the ACL layer with "Command
+ * plugin:updater|check not allowed by ACL" even though the capability
+ * permissions are all in place — v2.4.18's diagnose_updater proved the
+ * plugin itself is healthy from Rust, only the frontend IPC path is
+ * broken. Our custom command runs the same `app.updater().check()` call
+ * the plugin would, but doesn't go through the broken ACL hop. */
 export interface UpdateInfo {
   version: string;
+  currentVersion?: string;
   notes: string | null;
   date: string | null;
 }
+
+interface RustUpdateInfo {
+  version: string;
+  current_version?: string;
+  notes: string | null;
+  date: string | null;
+}
+
 export async function checkForAppUpdate(): Promise<UpdateInfo | null> {
   if (!isTauri()) return null;
   try {
-    const mod = await import(
-      '@tauri-apps/plugin-updater'
-    );
-    const update = await mod.check();
-    if (!update) return null;
+    const result = await invoke<RustUpdateInfo | null>('check_for_updates');
+    if (!result) return null;
     return {
-      version: update.version,
-      notes: update.body ?? null,
-      date: update.date ?? null,
+      version: result.version,
+      currentVersion: result.current_version,
+      notes: result.notes,
+      date: result.date,
     };
   } catch (err) {
     console.warn('updater check failed', err);
@@ -128,17 +144,14 @@ export async function diagnoseUpdaterFromRust(): Promise<string> {
   return invoke<string>('diagnose_updater');
 }
 
-/** Downloads + installs the pending update + restarts the app. */
+/** Downloads + installs the pending update + restarts the app.
+ *
+ * Like checkForAppUpdate, this uses our own `apply_update` command
+ * instead of the plugin's JS API, so it doesn't hit the broken ACL
+ * path. The Rust side does the download, install, and restart in one
+ * go — control should not return on success since restart() exits the
+ * current process. */
 export async function applyAppUpdate(): Promise<void> {
   if (!isTauri()) return;
-  const updMod = await import(
-    '@tauri-apps/plugin-updater'
-  );
-  const procMod = await import(
-    '@tauri-apps/plugin-process'
-  );
-  const update = await updMod.check();
-  if (!update) return;
-  await update.downloadAndInstall();
-  await procMod.relaunch();
+  await invoke<void>('apply_update');
 }

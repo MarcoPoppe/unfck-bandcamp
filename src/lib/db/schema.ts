@@ -547,4 +547,27 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 19,
+    name: 'phase_ah_digger_source_tag',
+    up: (db) => {
+      // Track which scan-source last picked up each curator, so the UI
+      // can scope the displayed list (and the "shared:" sample titles)
+      // to the source the user just scanned. Without this, switching
+      // from "library" to "playlist X" still shows curators from older
+      // library scans whose sample_titles point at tracks that aren't
+      // in playlist X — Marco saw UNMADE listed under his "Minimal
+      // April 2026" scan with shared tracks (Tim Theo, SVNX, FREEMAN)
+      // that aren't in that playlist at all.
+      db.prepare(
+        "ALTER TABLE digger_overlap ADD COLUMN last_source TEXT",
+      ).run();
+      db.prepare(
+        'ALTER TABLE digger_overlap ADD COLUMN last_source_playlist_id INTEGER',
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_digger_overlap_last_source ON digger_overlap (last_source, last_source_playlist_id)',
+      ).run();
+    },
+  },
 ];

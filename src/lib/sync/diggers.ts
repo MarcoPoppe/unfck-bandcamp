@@ -200,12 +200,14 @@ export async function syncDiggers(opts?: {
   let diggersWritten = 0;
   const tx = db.transaction(() => {
     const upsertOverlap = db.prepare(
-      `INSERT INTO digger_overlap (digger_id, overlap_count, sample_titles, last_computed_at)
-       VALUES (?, ?, ?, datetime('now'))
+      `INSERT INTO digger_overlap (digger_id, overlap_count, sample_titles, last_computed_at, last_source, last_source_playlist_id)
+       VALUES (?, ?, ?, datetime('now'), ?, ?)
        ON CONFLICT (digger_id) DO UPDATE SET
          overlap_count = excluded.overlap_count,
          sample_titles = excluded.sample_titles,
-         last_computed_at = excluded.last_computed_at`,
+         last_computed_at = excluded.last_computed_at,
+         last_source = excluded.last_source,
+         last_source_playlist_id = excluded.last_source_playlist_id`,
     );
     for (const d of sorted) {
       const diggerId = upsertDigger({
@@ -218,6 +220,8 @@ export async function syncDiggers(opts?: {
         diggerId,
         d.releases.size,
         JSON.stringify(d.sampleTitles),
+        source,
+        opts?.playlistId ?? null,
       );
       diggersWritten += 1;
     }
@@ -244,6 +248,14 @@ export interface DiggerCandidate {
   overlapCount: number;
   sampleTitles: string[];
   lastComputedAt: string;
+  /**
+   * Which source the candidate's overlap_count and sampleTitles were
+   * last computed from. Allows the UI to scope the displayed list
+   * to the source the user picked, instead of bleeding stale matches
+   * from older library/wishlist scans into a playlist scan view.
+   */
+  lastSource: DiggerSource | null;
+  lastSourcePlaylistId: number | null;
   isFollowed: boolean;
   isIgnored: boolean;
 }
@@ -252,14 +264,35 @@ export function listDiggerCandidates(opts: {
   limit?: number;
   includeIgnored?: boolean;
   ignoredOnly?: boolean;
+  /**
+   * When set, only return curators whose **most recent** scan was
+   * against the same source. The "shared:" sample-title list and
+   * overlap_count are stamped per scan, so showing a curator from a
+   * library scan under a playlist view used to leak tracks the user
+   * never had in that playlist (Marco's "Tim Theo / SVNX / FREEMAN
+   * under Minimal April 2026" report). Mig 19 added the
+   * last_source / last_source_playlist_id columns we filter on here.
+   */
+  source?: DiggerSource;
+  playlistId?: number;
 } = {}): DiggerCandidate[] {
   const limit = opts.limit ?? 100;
   const conds: string[] = [];
+  const params: (string | number)[] = [];
   if (opts.ignoredOnly) conds.push('do.ignored_at IS NOT NULL');
   else if (!opts.includeIgnored) conds.push('do.ignored_at IS NULL');
+  if (opts.source) {
+    conds.push('do.last_source = ?');
+    params.push(opts.source);
+    if (opts.source === 'playlist') {
+      conds.push('do.last_source_playlist_id = ?');
+      params.push(opts.playlistId ?? -1);
+    }
+  }
   const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  params.push(limit);
   const rows = getDb()
-    .prepare<[number], {
+    .prepare<typeof params, {
       digger_id: number;
       bc_username: string;
       bc_fan_id: number | null;
@@ -268,11 +301,14 @@ export function listDiggerCandidates(opts: {
       overlap_count: number;
       sample_titles: string | null;
       last_computed_at: string;
+      last_source: string | null;
+      last_source_playlist_id: number | null;
       ignored_at: string | null;
       followed: number;
     }>(
       `SELECT do.digger_id, d.bc_username, d.bc_fan_id, d.display_name, d.image_url,
-              do.overlap_count, do.sample_titles, do.last_computed_at, do.ignored_at,
+              do.overlap_count, do.sample_titles, do.last_computed_at,
+              do.last_source, do.last_source_playlist_id, do.ignored_at,
               CASE WHEN f.entity_id IS NULL THEN 0 ELSE 1 END AS followed
          FROM digger_overlap do
          INNER JOIN diggers d ON d.id = do.digger_id
@@ -282,7 +318,7 @@ export function listDiggerCandidates(opts: {
          ORDER BY do.overlap_count DESC, do.last_computed_at DESC
          LIMIT ?`,
     )
-    .all(limit);
+    .all(...params);
   return rows.map((r) => {
     let sample: string[] = [];
     if (r.sample_titles) {
@@ -295,6 +331,9 @@ export function listDiggerCandidates(opts: {
         // ignore
       }
     }
+    const ls = r.last_source;
+    const lastSource: DiggerSource | null =
+      ls === 'owned' || ls === 'wishlist' || ls === 'playlist' ? ls : null;
     return {
       diggerId: r.digger_id,
       bcUsername: r.bc_username,
@@ -304,6 +343,8 @@ export function listDiggerCandidates(opts: {
       overlapCount: r.overlap_count,
       sampleTitles: sample,
       lastComputedAt: r.last_computed_at,
+      lastSource,
+      lastSourcePlaylistId: r.last_source_playlist_id,
       isFollowed: r.followed === 1,
       isIgnored: r.ignored_at !== null,
     };

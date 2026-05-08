@@ -14,6 +14,8 @@ pub fn run() {
             commands::set_minimize_to_tray,
             commands::diagnose_updater,
             commands::log_from_frontend,
+            commands::check_for_updates,
+            commands::apply_update,
         ])
         .on_window_event(|window, event| {
             // Tray-on-close is decided in Rust because the JS-side
@@ -381,6 +383,61 @@ mod commands {
                 Err(msg)
             }
         }
+    }
+
+    #[derive(serde::Serialize)]
+    pub struct UpdateInfo {
+        pub version: String,
+        pub current_version: String,
+        pub notes: Option<String>,
+        pub date: Option<String>,
+    }
+
+    /// Direct Rust-side updater check that the frontend can invoke
+    /// via a custom command. v2.4.18's diagnose_updater confirmed
+    /// that `app.updater().check()` works fine from Rust, while
+    /// the same call routed through `plugin:updater|check` from the
+    /// frontend keeps getting rejected by the ACL layer with
+    /// "Command plugin:updater|check not allowed by ACL", even
+    /// though every documented capability permission is present.
+    /// Wrapping the plugin in our own command bypasses the ACL
+    /// path that's broken, so updates work again.
+    #[tauri::command]
+    pub async fn check_for_updates(
+        app: AppHandle,
+    ) -> Result<Option<UpdateInfo>, String> {
+        use tauri_plugin_updater::UpdaterExt;
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        match updater.check().await {
+            Ok(Some(update)) => Ok(Some(UpdateInfo {
+                version: update.version.clone(),
+                current_version: update.current_version.clone(),
+                notes: update.body.clone(),
+                date: update.date.map(|d| d.to_string()),
+            })),
+            Ok(None) => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+
+    /// Same idea: download + install + relaunch as a single custom
+    /// command, so the frontend never has to touch the
+    /// plugin:updater|download_and_install or plugin:process|restart
+    /// IPC paths that the same ACL layer rejects.
+    #[tauri::command]
+    pub async fn apply_update(app: AppHandle) -> Result<(), String> {
+        use tauri_plugin_updater::UpdaterExt;
+        let updater = app.updater().map_err(|e| e.to_string())?;
+        let update = updater
+            .check()
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "no update available".to_string())?;
+        update
+            .download_and_install(|_chunk_length, _content_length| {}, || {})
+            .await
+            .map_err(|e| e.to_string())?;
+        app.restart();
     }
 
     /// Diagnostic: pipe a frontend log line into the Tauri log file so

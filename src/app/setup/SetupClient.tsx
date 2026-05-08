@@ -552,6 +552,21 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
             <dt className="text-fg-muted">Cookies updated</dt>
             <dd className="font-mono text-xs">{formatDateTime(crawler.updatedAt)}</dd>
           </dl>
+        ) : tauriRuntime ? (
+          <div className="mt-4 rounded border border-accent/40 bg-accent/10 p-3 text-sm">
+            <p>
+              Sign in with your Bandcamp burner account directly from
+              this app — the embedded browser handles the cookie capture.
+            </p>
+            <button
+              type="button"
+              onClick={() => handleEmbeddedSignIn('crawler')}
+              disabled={validating === 'crawler'}
+              className="mt-3 rounded bg-accent px-4 py-2 font-medium text-fg-on-accent transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {validating === 'crawler' ? 'Signing in…' : 'Sign in with Bandcamp'}
+            </button>
+          </div>
         ) : (
           <>
             <p className="mt-3 text-xs text-fg-muted">
@@ -608,6 +623,21 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
             <dt className="text-fg-muted">Cookies updated</dt>
             <dd className="font-mono text-xs">{formatDateTime(main.updatedAt)}</dd>
           </dl>
+        ) : tauriRuntime ? (
+          <div className="mt-4 rounded border border-border bg-bg-elevated p-3 text-sm">
+            <p>
+              Sign in with your real Bandcamp account from this app.
+              The embedded browser captures the cookies for you.
+            </p>
+            <button
+              type="button"
+              onClick={() => handleEmbeddedSignIn('main')}
+              disabled={validating === 'main'}
+              className="mt-3 rounded border border-border bg-bg-surface px-4 py-2 font-medium text-fg-primary transition-colors hover:bg-bg-hover disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {validating === 'main' ? 'Signing in…' : 'Sign in with Bandcamp'}
+            </button>
+          </div>
         ) : (
           <>
             <textarea
