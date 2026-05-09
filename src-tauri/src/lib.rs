@@ -133,11 +133,19 @@ mod commands {
             .build()
             .map_err(|e| format!("failed to open login window: {e}"))?;
 
-        // Poll the WebView URL up to 5 minutes. When it lands on a
-        // post-login page (anything under bandcamp.com/<something>
-        // that's not /login or /signup), we're done logging in.
+        // Poll the WebView for one of two signals up to 5 minutes:
+        //   (a) URL transitions onto a /<username> profile path —
+        //       happens when the user navigates away from the login
+        //       screen (e.g. clicks "Open my collection")
+        //   (b) the `identity` cookie appears on bandcamp.com —
+        //       Bandcamp's default post-login redirect lands on
+        //       https://bandcamp.com/ (root) and the URL-only
+        //       detector would sit there forever waiting. Marco
+        //       reported having to click around in the profile menu
+        //       before the popup closed; cookie-based detection
+        //       fires the instant the login round-trip completes.
         let timeout = std::time::Instant::now() + Duration::from_secs(300);
-        let detected_username: Option<String>;
+        let mut detected_username: Option<String> = None;
         loop {
             if std::time::Instant::now() > timeout {
                 if let Some(w) = app.get_webview_window(&label) {
@@ -149,6 +157,8 @@ mod commands {
             if let Some(w) = app.get_webview_window(&label) {
                 let url = w.url().map_err(|e| e.to_string())?;
                 let s = url.to_string();
+
+                // Signal (a): URL lands on a /<username> profile page.
                 if s.starts_with("https://bandcamp.com/") {
                     if let Some(rest) = s.strip_prefix("https://bandcamp.com/") {
                         let candidate = rest
@@ -161,6 +171,30 @@ mod commands {
                             .trim();
                         if is_user_profile_segment(candidate) {
                             detected_username = Some(candidate.to_string());
+                            break;
+                        }
+                    }
+                }
+
+                // Signal (b): identity cookie shows up while the
+                // user is somewhere on bandcamp.com. The username
+                // resolves later via /api/auth/validate from the
+                // cookies themselves, so leaving detected_username
+                // None here is fine — Frontend never required it.
+                if s.starts_with("https://bandcamp.com") {
+                    if let Ok(cookies) = w.cookies() {
+                        let logged_in = cookies.iter().any(|c| {
+                            c.name() == "identity"
+                                && c
+                                    .domain()
+                                    .map(is_bandcamp_cookie_domain)
+                                    .unwrap_or(false)
+                        });
+                        if logged_in {
+                            log::info!(
+                                "[bc-login] identity cookie detected at {} — closing window",
+                                s
+                            );
                             break;
                         }
                     }
