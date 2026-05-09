@@ -131,6 +131,29 @@ export async function diagnoseUpdaterFromRust(): Promise<string> {
   return invoke<string>('diagnose_updater');
 }
 
+export interface ReleaseSummary {
+  version: string;
+  publishedAt: string | null;
+  isCurrent: boolean;
+}
+
+/** Returns the most recent published GitHub releases of the public
+ * repo. Used by the About-panel rollback picker so the user can
+ * see what versions are out there and pick a target. */
+export async function listAppReleases(): Promise<ReleaseSummary[]> {
+  if (!isTauri()) return [];
+  return invoke<ReleaseSummary[]>('list_releases');
+}
+
+/** Downloads the NSIS installer of a specific version and spawns
+ * it. Killed sidecar + DB snapshot happen on the Rust side; the
+ * Tauri app exits cleanly so the installer can take over the file
+ * lock without the user having to click "Ignore" in NSIS. */
+export async function installSpecificVersion(version: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>('install_specific_version', { version });
+}
+
 /** Downloads + installs the pending update + restarts the app.
  *
  * Like checkForAppUpdate, this uses our own `apply_update` command

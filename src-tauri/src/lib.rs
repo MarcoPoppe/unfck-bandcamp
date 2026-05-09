@@ -16,6 +16,8 @@ pub fn run() {
             commands::log_from_frontend,
             commands::check_for_updates,
             commands::apply_update,
+            commands::list_releases,
+            commands::install_specific_version,
         ])
         .on_window_event(|window, event| {
             // Tray-on-close is decided in Rust because the JS-side
@@ -549,6 +551,137 @@ mod commands {
             .await
             .map_err(|e| e.to_string())?;
         app.restart();
+    }
+
+    #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct ReleaseSummary {
+        pub version: String,
+        pub published_at: Option<String>,
+        pub is_current: bool,
+    }
+
+    /// Lists the most recent N GitHub releases of the public repo so
+    /// the About panel can surface a "Install this version" picker.
+    /// Marco wanted a downgrade switch as a safety net for shipped-
+    /// broken releases — without it, friend-testers were stuck on a
+    /// bad build until the next forward-update fixed things.
+    ///
+    /// We talk to GitHub's REST API directly with the bundled reqwest
+    /// client. No auth needed: the repo is public and we're well below
+    /// the unauthenticated rate limit (60/hour) for a UI that only
+    /// fetches when the user opens the panel.
+    #[tauri::command]
+    pub async fn list_releases(app: AppHandle) -> Result<Vec<ReleaseSummary>, String> {
+        #[derive(serde::Deserialize)]
+        struct GhRelease {
+            tag_name: String,
+            published_at: Option<String>,
+            draft: bool,
+            prerelease: bool,
+        }
+        let url = "https://api.github.com/repos/MarcoPoppe/unfck-bandcamp/releases?per_page=20";
+        let res = reqwest::Client::builder()
+            .user_agent("unfck-bandcamp")
+            .build()
+            .map_err(|e| e.to_string())?
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !res.status().is_success() {
+            return Err(format!("github api returned {}", res.status()));
+        }
+        let releases: Vec<GhRelease> = res.json().await.map_err(|e| e.to_string())?;
+        let current = app.package_info().version.to_string();
+        Ok(releases
+            .into_iter()
+            .filter(|r| !r.draft && !r.prerelease)
+            .map(|r| {
+                let version = r.tag_name.trim_start_matches('v').to_string();
+                let is_current = version == current;
+                ReleaseSummary {
+                    version,
+                    published_at: r.published_at,
+                    is_current,
+                }
+            })
+            .collect())
+    }
+
+    /// Downloads the Windows NSIS installer of a specific version from
+    /// GitHub Releases and spawns it. Same Sidecar-kill dance as
+    /// apply_update so the installer can overwrite better_sqlite3.node
+    /// without the live Node process holding the lock.
+    ///
+    /// Backs up unfck.db before kicking off the installer so a downgrade
+    /// onto a build that doesn't understand the latest schema can be
+    /// reverted by hand. Backup file is unfck.db.before-vX.Y.Z.bak in
+    /// the same data directory.
+    #[tauri::command]
+    pub async fn install_specific_version(
+        app: AppHandle,
+        version: String,
+    ) -> Result<(), String> {
+        let trimmed = version.trim_start_matches('v').to_string();
+        if trimmed.is_empty() || trimmed.contains('/') {
+            return Err("invalid version".into());
+        }
+        // Pre-flight: snapshot the DB next to itself with the current
+        // version stamped into the filename. Cheap, ~3 MB copy, lets
+        // the user roll the data back if the installed-older version
+        // mishandles a schema column it doesn't know about.
+        let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        let db = data_dir.join("data").join("unfck.db");
+        if db.exists() {
+            let current = app.package_info().version.to_string();
+            let backup = data_dir
+                .join("data")
+                .join(format!("unfck.db.before-v{}.bak", current));
+            let _ = std::fs::copy(&db, &backup);
+            log::info!(
+                "[install-version] DB snapshot {} -> {}",
+                db.display(),
+                backup.display()
+            );
+        }
+        // Sidecar must die before the installer touches the standalone
+        // tree, same lock issue as apply_update v2.4.26.
+        if let Some(handle) = app.try_state::<super::sidecar::SidecarHandle>() {
+            super::sidecar::kill(&handle);
+            tokio::time::sleep(Duration::from_millis(800)).await;
+        }
+        // Download to a temp file so we don't litter the program tree.
+        let installer_url = format!(
+            "https://github.com/MarcoPoppe/unfck-bandcamp/releases/download/v{0}/Unfck.Bandcamp_{0}_x64-setup.exe",
+            trimmed
+        );
+        log::info!("[install-version] downloading {}", installer_url);
+        let bytes = reqwest::Client::builder()
+            .user_agent("unfck-bandcamp")
+            .build()
+            .map_err(|e| e.to_string())?
+            .get(&installer_url)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?
+            .bytes()
+            .await
+            .map_err(|e| e.to_string())?;
+        let tmp = std::env::temp_dir().join(format!("Unfck-Bandcamp-{}-setup.exe", trimmed));
+        std::fs::write(&tmp, &bytes).map_err(|e| e.to_string())?;
+        // Hand off to the NSIS installer and exit. /S would run silent
+        // but we want the user to see the standard install dialog so
+        // they know it's actually happening.
+        log::info!("[install-version] launching installer {}", tmp.display());
+        std::process::Command::new(&tmp)
+            .spawn()
+            .map_err(|e| format!("failed to launch installer: {e}"))?;
+        // Give the installer a head-start before we exit so the new
+        // process isn't competing for window focus with our own.
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        app.exit(0);
+        Ok(())
     }
 
     /// Diagnostic: pipe a frontend log line into the Tauri log file so

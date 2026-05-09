@@ -1,6 +1,6 @@
 [package]
 name = "unfck-bandcamp"
-version = "2.4.26"
+version = "2.4.27"
 description = "Self-hosted Bandcamp discovery tool with Beatport-style UI"
 authors = ["Marco Poppe"]
 license = "MIT"
@@ -26,3 +26,9 @@ tauri-plugin-shell = "2"
 tauri-plugin-process = "2"
 tokio = { version = "1", features = ["time"] }
 url = "2"
+# Used by the install_specific_version command to fetch the GitHub
+# releases list and download a per-version NSIS installer. tauri-plugin-
+# updater pulls reqwest in transitively but doesn't re-export it, so
+# we declare a direct dep with the rustls TLS backend (no system OpenSSL
+# requirement on Windows runners).
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json"] }
