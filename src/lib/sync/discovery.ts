@@ -187,6 +187,18 @@ interface ProgressOpts {
    * the app (the env var still acts as the global default). */
   releasesPerArtist?: number;
   releasesPerDigger?: number;
+  /** Total-tracks stop signal shared across the artist + digger
+   * passes. If set, the crawl exits the outer loop as soon as
+   * tracker.written >= tracker.target. Marco wanted "give me 50
+   * tracks and stop", so we expose a shared counter that both
+   * inner crawls update after each batch and check at the top of
+   * each iteration. */
+  tracker?: TrackBudget;
+}
+
+export interface TrackBudget {
+  written: number;
+  target: number;
 }
 
 export async function syncFollowedArtistsDiscovery(
@@ -205,6 +217,7 @@ export async function syncFollowedArtistsDiscovery(
   const now = new Date().toISOString();
 
   for (let i = 0; i < followed.length; i += 1) {
+    if (opts?.tracker && opts.tracker.written >= opts.tracker.target) break;
     const artist = followed[i];
     try {
       const overview = await fetchArtistOverview(artist.bcUrl, auth.cookieString);
@@ -273,11 +286,13 @@ export async function syncFollowedArtistsDiscovery(
                 artist.id,
               );
               tracksWritten += 1;
+              if (opts?.tracker) opts.tracker.written += 1;
             }
           }
         });
         tx();
         opts?.onProgress?.(releasesFetched);
+        if (opts?.tracker && opts.tracker.written >= opts.tracker.target) break;
         if (bs + RELEASE_PARALLELISM < releasesToCrawl.length) {
           await new Promise((res) => setTimeout(res, PER_REQUEST_DELAY_MS));
         }
@@ -357,6 +372,7 @@ export async function syncFollowedDiggersDiscovery(
   }
 
   for (let i = 0; i < followed.length; i += 1) {
+    if (opts?.tracker && opts.tracker.written >= opts.tracker.target) break;
     const curator = followed[i];
     try {
       // Source preference: full curator crawl if available, otherwise BC's
@@ -433,11 +449,13 @@ export async function syncFollowedDiggersDiscovery(
                 curator.id,
               );
               tracksWritten += 1;
+              if (opts?.tracker) opts.tracker.written += 1;
             }
           }
         });
         tx();
         opts?.onProgress?.(releasesFetched);
+        if (opts?.tracker && opts.tracker.written >= opts.tracker.target) break;
         if (bs + RELEASE_PARALLELISM < releases.length) {
           await new Promise((res) => setTimeout(res, PER_REQUEST_DELAY_MS));
         }
@@ -480,7 +498,15 @@ export async function syncFollowedDiggersDiscovery(
  */
 export async function syncFollowedDiscovery(
   runId?: number,
-  caps?: { releasesPerArtist?: number; releasesPerDigger?: number },
+  caps?: {
+    releasesPerArtist?: number;
+    releasesPerDigger?: number;
+    /** Total tracks to write across both artist + digger passes
+     * before the crawl exits early. Marco's "give me 50 tracks
+     * and stop" mode. Without it, both inner crawls run until
+     * their own per-source caps. */
+    targetTrackCount?: number;
+  },
 ): Promise<DiscoverySyncResult> {
   const startedAt = Date.now();
   let totalReleases = 0;
@@ -488,21 +514,41 @@ export async function syncFollowedDiscovery(
     if (runId == null) return;
     updateDiscoverySyncRun(runId, { items_synced: totalReleases + n });
   };
+  // Shared track budget threaded through both inner crawls so a
+  // small target doesn't have to wait for the artist pass to fully
+  // empty out before the digger pass even checks whether it should
+  // run. `written` is incremented from inside the loops; both check
+  // their own outer iteration after each release batch.
+  const tracker = caps?.targetTrackCount
+    ? { written: 0, target: caps.targetTrackCount }
+    : undefined;
   try {
     const a = await syncFollowedArtistsDiscovery({
       onProgress,
       runId: runId ?? null,
       releasesPerArtist: caps?.releasesPerArtist,
+      tracker,
     });
     totalReleases = a.releasesFetched;
     if (runId != null) {
       updateDiscoverySyncRun(runId, { items_synced: totalReleases });
     }
-    const d = await syncFollowedDiggersDiscovery({
-      onProgress,
-      runId: runId ?? null,
-      releasesPerDigger: caps?.releasesPerDigger,
-    });
+    const d =
+      tracker && tracker.written >= tracker.target
+        ? {
+            artistsCrawled: 0,
+            diggersCrawled: 0,
+            releasesFetched: 0,
+            tracksWritten: 0,
+            errors: [] as DiscoverySyncResult['errors'],
+            durationMs: 0,
+          }
+        : await syncFollowedDiggersDiscovery({
+            onProgress,
+            runId: runId ?? null,
+            releasesPerDigger: caps?.releasesPerDigger,
+            tracker,
+          });
     totalReleases = a.releasesFetched + d.releasesFetched;
     if (runId != null) {
       updateDiscoverySyncRun(runId, {

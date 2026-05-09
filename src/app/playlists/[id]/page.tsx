@@ -1,6 +1,11 @@
 import { notFound } from 'next/navigation';
 import PlaylistDetailClient from './PlaylistDetailClient';
-import { getPlaylist, getPlaylistTracks } from '@/lib/library/playlists';
+import {
+  getPlaylist,
+  getPlaylistTracks,
+  listPlaylistArtists,
+  listPlaylistCurators,
+} from '@/lib/library/playlists';
 import { getStoredAuth } from '@/lib/auth/store';
 import { getPlayedBcTrackIds } from '@/lib/library/plays';
 
@@ -35,6 +40,8 @@ export default async function PlaylistDetailPage({
     ...t,
     hasBeenPlayed: played.has(t.bcTrackId),
   }));
+  const artists = listPlaylistArtists(playlistId);
+  const curators = listPlaylistCurators(playlistId);
   return (
     <main className="mx-auto max-w-5xl px-4 pb-32 pt-8">
       <header className="mb-6">
@@ -42,9 +49,16 @@ export default async function PlaylistDetailPage({
           ← All playlists
         </a>
         <h1 className="mt-2 text-3xl font-bold tracking-tight">{playlist.name}</h1>
-        <p className="text-fg-secondary">{playlist.trackCount} tracks</p>
+        <p className="text-fg-secondary">
+          {playlist.trackCount} tracks · {artists.length} artists · {curators.length} curators
+        </p>
       </header>
-      <PlaylistDetailClient playlistId={playlistId} initialTracks={tracks} />
+      <PlaylistDetailClient
+        playlistId={playlistId}
+        initialTracks={tracks}
+        initialArtists={artists}
+        initialCurators={curators}
+      />
     </main>
   );
 }

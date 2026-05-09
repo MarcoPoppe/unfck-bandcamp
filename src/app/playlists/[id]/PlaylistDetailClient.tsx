@@ -5,18 +5,54 @@ import TrackRow, { type TrackRowData } from '@/components/TrackRow';
 import TrackListSearch from '@/components/TrackListSearch';
 import { usePlayerStore } from '@/lib/store/player';
 import { useGlobalPlaybackShortcuts } from '@/lib/store/hooks';
-import type { PlaylistTrack } from '@/lib/library/playlists';
+import type {
+  PlaylistArtistRow,
+  PlaylistCuratorRow,
+  PlaylistTrack,
+} from '@/lib/library/playlists';
 
 interface Props {
   playlistId: number;
   initialTracks: PlaylistTrack[];
+  initialArtists: PlaylistArtistRow[];
+  initialCurators: PlaylistCuratorRow[];
 }
 
-export default function PlaylistDetailClient({ playlistId, initialTracks }: Props) {
+type Tab = 'tracks' | 'artists' | 'curators';
+
+export default function PlaylistDetailClient({
+  playlistId,
+  initialTracks,
+  initialArtists,
+  initialCurators,
+}: Props) {
   const [tracks, setTracks] = useState<PlaylistTrack[]>(initialTracks);
+  const [artists, setArtists] = useState<PlaylistArtistRow[]>(initialArtists);
+  const [curators, setCurators] = useState<PlaylistCuratorRow[]>(initialCurators);
+  const [tab, setTab] = useState<Tab>('tracks');
   const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
   const setQueue = usePlayerStore((s) => s.setQueue);
+
+  async function untagArtist(artistId: number) {
+    if (!confirm('Remove this artist from the playlist?')) return;
+    const res = await fetch(`/api/playlists/${playlistId}/artists`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ artistId, action: 'remove' }),
+    });
+    if (res.ok) setArtists((prev) => prev.filter((a) => a.artistId !== artistId));
+  }
+
+  async function untagCurator(diggerId: number) {
+    if (!confirm('Remove this curator from the playlist?')) return;
+    const res = await fetch(`/api/playlists/${playlistId}/curators`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ diggerId, action: 'remove' }),
+    });
+    if (res.ok) setCurators((prev) => prev.filter((c) => c.diggerId !== diggerId));
+  }
 
   const filteredTracks = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -87,16 +123,129 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
     }
   }
 
-  if (tracks.length === 0) {
-    return (
-      <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
-        No tracks yet. Add tracks via the + button on the Tracks page.
-      </p>
-    );
-  }
+  const tabs: { id: Tab; label: string; count: number }[] = [
+    { id: 'tracks', label: 'Tracks', count: tracks.length },
+    { id: 'artists', label: 'Artists', count: artists.length },
+    { id: 'curators', label: 'Curators', count: curators.length },
+  ];
 
   return (
     <>
+      <div className="mb-4 flex gap-2 border-b border-border">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => setTab(t.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
+              tab === t.id
+                ? 'border-accent text-fg-primary'
+                : 'border-transparent text-fg-secondary hover:text-fg-primary'
+            }`}
+          >
+            {t.label} <span className="ml-1 text-xs text-fg-muted">{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {tab === 'artists' && (
+        <div>
+          {artists.length === 0 ? (
+            <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
+              No artists in this playlist yet. Open an artist profile and use
+              &quot;Add to playlist&quot; to tag them into a genre bucket.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border rounded border border-border bg-bg-surface">
+              {artists.map((a) => (
+                <li key={a.artistId} className="flex items-center gap-3 p-3">
+                  {a.imageUrl ? (
+                    <img
+                      src={a.imageUrl}
+                      alt=""
+                      className="h-10 w-10 flex-none rounded bg-bg-elevated object-cover"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 flex-none rounded bg-bg-elevated" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <a
+                      href={`/artist/${a.artistId}`}
+                      className="block truncate text-sm font-medium text-fg-primary hover:text-accent"
+                    >
+                      {a.name}
+                    </a>
+                    <div className="truncate font-mono text-xs text-fg-muted">
+                      {a.bcUrl.replace(/^https?:\/\//, '')}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => untagArtist(a.artistId)}
+                    className="rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'curators' && (
+        <div>
+          {curators.length === 0 ? (
+            <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
+              No curators in this playlist yet. Open a curator profile and use
+              &quot;Add to playlist&quot;.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border rounded border border-border bg-bg-surface">
+              {curators.map((c) => (
+                <li key={c.diggerId} className="flex items-center gap-3 p-3">
+                  {c.imageUrl ? (
+                    <img
+                      src={c.imageUrl}
+                      alt=""
+                      className="h-10 w-10 flex-none rounded-full bg-bg-elevated object-cover"
+                    />
+                  ) : (
+                    <div className="h-10 w-10 flex-none rounded-full bg-bg-elevated" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <a
+                      href={`/digger/${c.diggerId}`}
+                      className="block truncate text-sm font-medium text-fg-primary hover:text-accent"
+                    >
+                      {c.displayName ?? c.bcUsername}
+                    </a>
+                    <div className="truncate font-mono text-xs text-fg-muted">
+                      @{c.bcUsername}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => untagCurator(c.diggerId)}
+                    className="rounded border border-border px-3 py-1 text-xs text-fg-secondary transition-colors hover:border-border-danger hover:text-fg-danger"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {tab === 'tracks' && tracks.length === 0 && (
+        <p className="rounded border border-dashed border-border bg-bg-surface px-4 py-8 text-center text-sm text-fg-muted">
+          No tracks yet. Add tracks via the + button on the Tracks page.
+        </p>
+      )}
+
+      {tab === 'tracks' && tracks.length > 0 && (
+      <>
       <TrackListSearch
         value={search}
         onChange={setSearch}
@@ -152,6 +301,8 @@ export default function PlaylistDetailClient({ playlistId, initialTracks }: Prop
           );
         })}
       </div>
+      </>
+      )}
     </>
   );
 }

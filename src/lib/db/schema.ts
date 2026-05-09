@@ -570,4 +570,39 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 20,
+    name: 'phase_ai_playlist_buckets',
+    up: (db) => {
+      // Promote playlists from "track collections" to genre buckets:
+      // attach artists and curators to a playlist so Discover can
+      // scope a crawl to "only the artists + curators tagged into
+      // playlist Minimal" instead of the user's entire follow list.
+      // An entity can sit in multiple playlists (one artist that
+      // covers Minimal AND Tech-House gets two rows). Many-to-many
+      // junction tables, no payload.
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS playlist_artists (
+           playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+           artist_id INTEGER NOT NULL REFERENCES artists(id) ON DELETE CASCADE,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           PRIMARY KEY (playlist_id, artist_id)
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_playlist_artists_artist ON playlist_artists (artist_id)',
+      ).run();
+      db.prepare(
+        `CREATE TABLE IF NOT EXISTS playlist_curators (
+           playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+           digger_id INTEGER NOT NULL REFERENCES diggers(id) ON DELETE CASCADE,
+           added_at TEXT NOT NULL DEFAULT (datetime('now')),
+           PRIMARY KEY (playlist_id, digger_id)
+         )`,
+      ).run();
+      db.prepare(
+        'CREATE INDEX IF NOT EXISTS idx_playlist_curators_curator ON playlist_curators (digger_id)',
+      ).run();
+    },
+  },
 ];

@@ -20,6 +20,11 @@ export const maxDuration = 600;
 interface PostBody {
   releasesPerArtist?: number;
   releasesPerDigger?: number;
+  /** Marco's "stop after N tracks" mode: shared budget across both
+   * the artist and digger passes. The crawl exits the outer loop
+   * as soon as the count is reached, so a 50-target run no longer
+   * has to drain every followed artist before it stops. */
+  targetTrackCount?: number;
 }
 
 function clampPositiveInt(raw: unknown, max: number): number | undefined {
@@ -40,6 +45,7 @@ export async function POST(req: Request) {
   const caps = {
     releasesPerArtist: clampPositiveInt(body.releasesPerArtist, 200),
     releasesPerDigger: clampPositiveInt(body.releasesPerDigger, 1000),
+    targetTrackCount: clampPositiveInt(body.targetTrackCount, 5000),
   };
   // If a sync is already running, return its row instead of starting a new
   // one — protects against double-click and panel-juggling.

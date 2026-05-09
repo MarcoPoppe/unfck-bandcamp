@@ -289,6 +289,168 @@ export function getPlaylistMembershipForBcTrackIds(
   return map;
 }
 
+// ---------------------------------------------------------------------------
+// Playlist membership for artists + curators (Mig 20)
+//
+// Pfad A from the design discussion: a playlist is a genre bucket, not just
+// a track list. Artists and curators get attached to a playlist so Discover
+// can scope a crawl to just the followings tagged into that bucket. An
+// entity can sit in multiple playlists.
+// ---------------------------------------------------------------------------
+
+export interface PlaylistArtistRow {
+  artistId: number;
+  name: string;
+  imageUrl: string | null;
+  bcUrl: string;
+  addedAt: string;
+}
+
+export interface PlaylistCuratorRow {
+  diggerId: number;
+  bcUsername: string;
+  displayName: string | null;
+  imageUrl: string | null;
+  bcFanId: number | null;
+  addedAt: string;
+}
+
+export function listPlaylistArtists(playlistId: number): PlaylistArtistRow[] {
+  const rows = getDb()
+    .prepare<[number], {
+      artist_id: number;
+      name: string;
+      image_url: string | null;
+      bc_url: string;
+      added_at: string;
+    }>(
+      `SELECT pa.artist_id, a.name, a.image_url, a.bc_url, pa.added_at
+         FROM playlist_artists pa
+         INNER JOIN artists a ON a.id = pa.artist_id
+         WHERE pa.playlist_id = ?
+         ORDER BY a.name ASC`,
+    )
+    .all(playlistId);
+  return rows.map((r) => ({
+    artistId: r.artist_id,
+    name: r.name,
+    imageUrl: r.image_url,
+    bcUrl: r.bc_url,
+    addedAt: r.added_at,
+  }));
+}
+
+export function listPlaylistCurators(playlistId: number): PlaylistCuratorRow[] {
+  const rows = getDb()
+    .prepare<[number], {
+      digger_id: number;
+      bc_username: string;
+      display_name: string | null;
+      image_url: string | null;
+      bc_fan_id: number | null;
+      added_at: string;
+    }>(
+      `SELECT pc.digger_id, d.bc_username, d.display_name, d.image_url, d.bc_fan_id, pc.added_at
+         FROM playlist_curators pc
+         INNER JOIN diggers d ON d.id = pc.digger_id
+         WHERE pc.playlist_id = ?
+         ORDER BY d.bc_username ASC`,
+    )
+    .all(playlistId);
+  return rows.map((r) => ({
+    diggerId: r.digger_id,
+    bcUsername: r.bc_username,
+    displayName: r.display_name,
+    imageUrl: r.image_url,
+    bcFanId: r.bc_fan_id,
+    addedAt: r.added_at,
+  }));
+}
+
+export function addArtistToPlaylist(playlistId: number, artistId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(
+      'INSERT OR IGNORE INTO playlist_artists (playlist_id, artist_id) VALUES (?, ?)',
+    )
+    .run(playlistId, artistId);
+  if (info.changes > 0) {
+    db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+    return true;
+  }
+  return false;
+}
+
+export function removeArtistFromPlaylist(playlistId: number, artistId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare('DELETE FROM playlist_artists WHERE playlist_id = ? AND artist_id = ?')
+    .run(playlistId, artistId);
+  if (info.changes > 0) {
+    db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+  }
+  return info.changes > 0;
+}
+
+export function addCuratorToPlaylist(playlistId: number, diggerId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare(
+      'INSERT OR IGNORE INTO playlist_curators (playlist_id, digger_id) VALUES (?, ?)',
+    )
+    .run(playlistId, diggerId);
+  if (info.changes > 0) {
+    db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+    return true;
+  }
+  return false;
+}
+
+export function removeCuratorFromPlaylist(playlistId: number, diggerId: number): boolean {
+  const db = getDb();
+  const info = db
+    .prepare('DELETE FROM playlist_curators WHERE playlist_id = ? AND digger_id = ?')
+    .run(playlistId, diggerId);
+  if (info.changes > 0) {
+    db.prepare("UPDATE playlists SET updated_at = datetime('now') WHERE id = ?").run(playlistId);
+  }
+  return info.changes > 0;
+}
+
+/** For the "Add to playlist" dropdown on an artist or curator profile:
+ * each playlist row is annotated with whether the entity is already in it. */
+export function listPlaylistsWithArtistMembership(
+  artistId: number,
+): { id: number; name: string; contains: boolean }[] {
+  return getDb()
+    .prepare<[number], { id: number; name: string; contains: number }>(
+      `SELECT p.id, p.name,
+              EXISTS (
+                SELECT 1 FROM playlist_artists pa
+                 WHERE pa.playlist_id = p.id AND pa.artist_id = ?
+              ) AS contains
+         FROM playlists p ORDER BY p.updated_at DESC`,
+    )
+    .all(artistId)
+    .map((r) => ({ id: r.id, name: r.name, contains: r.contains === 1 }));
+}
+
+export function listPlaylistsWithCuratorMembership(
+  diggerId: number,
+): { id: number; name: string; contains: boolean }[] {
+  return getDb()
+    .prepare<[number], { id: number; name: string; contains: number }>(
+      `SELECT p.id, p.name,
+              EXISTS (
+                SELECT 1 FROM playlist_curators pc
+                 WHERE pc.playlist_id = p.id AND pc.digger_id = ?
+              ) AS contains
+         FROM playlists p ORDER BY p.updated_at DESC`,
+    )
+    .all(diggerId)
+    .map((r) => ({ id: r.id, name: r.name, contains: r.contains === 1 }));
+}
+
 export function getPlaylist(id: number): PlaylistRow | null {
   // Same JOIN-through-tracks filter as listPlaylists so a single playlist
   // detail page never reports a higher track count than it actually shows

@@ -382,16 +382,20 @@ function TracksTab({
   // once and forgets. Defaults match the server's env-var defaults
   // (12 per artist, 200 per curator) — chosen so a fresh user with a
   // dozen follows finishes the first sync in under a minute.
-  const [perArtist, setPerArtist] = useState(12);
-  const [perDigger, setPerDigger] = useState(200);
+  // v2.4.23: replace the old "Releases / artist" + "Releases / curator"
+  // pair with one shared track-budget. Marco wanted a single "discover
+  // me 50 tracks and stop" knob; the per-source caps stay as default
+  // backstops on the server but the UI no longer asks the user to pick
+  // them by hand. Defaults map "Quick crate" → 50, "Standard" → 200,
+  // "Deep crawl" → 1000, "All" → unlimited.
+  const TRACK_BUDGET_OPTIONS = [50, 100, 200, 500, 1000, 0] as const;
+  const [trackBudget, setTrackBudget] = useState<number>(200);
   useEffect(() => {
-    const a = Number(localStorage.getItem('unfck.discovery.per_artist'));
-    if (Number.isInteger(a) && a > 0) setPerArtist(a);
-    const d = Number(localStorage.getItem('unfck.discovery.per_digger'));
-    if (Number.isInteger(d) && d > 0) setPerDigger(d);
+    const t = Number(localStorage.getItem('unfck.discovery.track_budget'));
+    if (Number.isInteger(t) && t >= 0) setTrackBudget(t);
   }, []);
-  function saveCap(key: 'per_artist' | 'per_digger', value: number) {
-    localStorage.setItem(`unfck.discovery.${key}`, String(value));
+  function saveBudget(value: number) {
+    localStorage.setItem('unfck.discovery.track_budget', String(value));
   }
   useGlobalPlaybackShortcuts();
 
@@ -453,8 +457,9 @@ function TracksTab({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          releasesPerArtist: perArtist,
-          releasesPerDigger: perDigger,
+          // 0 means "no budget, run full per-source defaults"; we send
+          // undefined in that case so the server uses its own caps.
+          targetTrackCount: trackBudget > 0 ? trackBudget : undefined,
         }),
       });
       const json = (await res.json()) as {
@@ -612,38 +617,24 @@ function TracksTab({
           : 'Discover'}
       </button>
       <label className="flex flex-col gap-1 text-xs text-fg-muted">
-        <span>Releases / artist</span>
-        <input
-          type="number"
-          min={1}
-          max={200}
-          value={perArtist}
+        <span>Tracks to fetch</span>
+        <select
+          value={trackBudget}
           onChange={(e) => {
             const n = Number(e.target.value);
-            if (Number.isInteger(n) && n > 0) {
-              setPerArtist(n);
-              saveCap('per_artist', n);
+            if (Number.isInteger(n) && n >= 0) {
+              setTrackBudget(n);
+              saveBudget(n);
             }
           }}
-          className="w-20 rounded border border-border bg-bg-base px-2 py-1 font-mono text-sm text-fg-primary focus:border-accent focus:outline-none"
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-xs text-fg-muted">
-        <span>Releases / curator</span>
-        <input
-          type="number"
-          min={1}
-          max={1000}
-          value={perDigger}
-          onChange={(e) => {
-            const n = Number(e.target.value);
-            if (Number.isInteger(n) && n > 0) {
-              setPerDigger(n);
-              saveCap('per_digger', n);
-            }
-          }}
-          className="w-20 rounded border border-border bg-bg-base px-2 py-1 font-mono text-sm text-fg-primary focus:border-accent focus:outline-none"
-        />
+          className="rounded border border-border bg-bg-base px-2 py-1 font-mono text-sm text-fg-primary focus:border-accent focus:outline-none"
+        >
+          {TRACK_BUDGET_OPTIONS.map((n) => (
+            <option key={n} value={n}>
+              {n === 0 ? 'all' : n}
+            </option>
+          ))}
+        </select>
       </label>
     </div>
   );

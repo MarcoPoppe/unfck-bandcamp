@@ -7,6 +7,7 @@ import TrackRow from '@/components/TrackRow';
 import HidePlayedToggle from '@/components/HidePlayedToggle';
 import ActiveBadge from '@/components/ActiveBadge';
 import OpenOnBandcampButton from '@/components/OpenOnBandcampButton';
+import AddEntityToPlaylistButton from '@/components/AddEntityToPlaylistButton';
 import TrackListSearch from '@/components/TrackListSearch';
 import type { ActivitySnapshot } from '@/lib/library/activity';
 import { usePreferences } from '@/lib/settings/preferences';
@@ -713,6 +714,7 @@ export default function DiggerDetailClient({
               href={`https://bandcamp.com/${detail.bcUsername}`}
               label="Open curator on bandcamp.com"
             />
+            <AddEntityToPlaylistButton kind="digger" entityId={detail.diggerId} />
           </div>
           {/* Stats row: separate band, smaller weight than identity. */}
           <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
