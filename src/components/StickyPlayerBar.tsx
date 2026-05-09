@@ -923,6 +923,31 @@ export default function StickyPlayerBar() {
               bcUrl={current.bcUrl}
             />
           )}
+          <Tooltip text="Cue to track start" position="top">
+            <button
+              type="button"
+              onClick={() => {
+                // Pioneer-style CUE: jump to track start and pause.
+                // We seek the underlying <audio> element directly;
+                // WaveSurfer (if mounted) follows via its `audioprocess`
+                // listener so the waveform cursor returns to 0 too.
+                const el = mediaElementRef.current;
+                if (el) {
+                  try {
+                    el.currentTime = 0;
+                  } catch {
+                    // Safari throws if no source loaded yet — ignore.
+                  }
+                }
+                setIsPlaying(false);
+              }}
+              disabled={!current}
+              className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-amber-500 text-[10px] font-bold tracking-wide text-amber-500 transition-colors hover:bg-amber-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-30"
+              aria-label="Cue to track start"
+            >
+              CUE
+            </button>
+          </Tooltip>
           <Tooltip text="Previous track (A)" position="top">
             <button
               type="button"

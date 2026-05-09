@@ -18,6 +18,7 @@ pub fn run() {
             commands::apply_update,
             commands::list_releases,
             commands::install_specific_version,
+            commands::open_in_default_browser,
         ])
         .on_window_event(|window, event| {
             // Tray-on-close is decided in Rust because the JS-side
@@ -698,6 +699,31 @@ mod commands {
         tokio::time::sleep(Duration::from_millis(500)).await;
         app.exit(0);
         Ok(())
+    }
+
+    /// Opens a URL in the user's default OS browser via the shell
+    /// plugin. Frontend `window.open(url, '_blank')` is silently
+    /// blocked by WebView2 (security) so the "Open in default
+    /// browser" button on /setup did nothing on Tauri 2.4.x. The
+    /// tray menu already used app.shell().open() correctly; this
+    /// command exposes the same path to the frontend without
+    /// routing through plugin:shell|open which would hit the same
+    /// ACL layer the updater plugin keeps tripping on.
+    #[tauri::command]
+    pub fn open_in_default_browser(
+        app: AppHandle,
+        url: String,
+    ) -> Result<(), String> {
+        use tauri_plugin_shell::ShellExt;
+        if !url.starts_with("http://127.0.0.1")
+            && !url.starts_with("http://localhost")
+            && !url.starts_with("https://")
+        {
+            return Err("only loopback or https URLs allowed".into());
+        }
+        app.shell()
+            .open(&url, None)
+            .map_err(|e| format!("shell open failed: {e}"))
     }
 
     /// Diagnostic: pipe a frontend log line into the Tauri log file so

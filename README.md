@@ -13,13 +13,25 @@ Lad den Installer für dein OS aus dem [Releases-Reiter](https://github.com/Marc
 | OS | Datei | Was tun |
 |---|---|---|
 | **Windows** | `Unfck.Bandcamp_X.Y.Z_x64_en-US.msi` | Doppelklick. Bei „Windows hat den PC geschützt" → **Weitere Informationen** → **Trotzdem ausführen**. |
-| **macOS (Apple Silicon)** | `Unfck.Bandcamp_X.Y.Z_aarch64.dmg` | Mounten, App in `/Applications` ziehen. Beim ersten Start: **Rechtsklick → Öffnen → Öffnen**. Danach normal startbar. |
+| **macOS (Apple Silicon)** | `Unfck.Bandcamp_X.Y.Z_aarch64.dmg` | Mounten, App in `/Applications` ziehen. Beim ersten Start meldet macOS „App ist beschädigt" — siehe Hinweis unten. |
 | **macOS (Intel)** | `Unfck.Bandcamp_X.Y.Z_x64.dmg` | wie oben |
 | **Linux** | `.AppImage`, `.deb` oder `.rpm` | AppImage: `chmod +x` + ausführen. Deb/RPM: mit Paketmanager installieren. |
 
 **Node.js etc. brauchst du nicht** — alles ist im Installer drin. App-Größe ist ~80 MB pro OS, weil ein vollständiger Node-Sidecar mitgeliefert wird.
 
 > **Warum die Sicherheits-Warnungen?** Die App ist nicht code-signiert (Code-Signing-Zertifikate kosten 99–300 €/Jahr und stehen aktuell nicht im Verhältnis zum Friend-Test-Aufwand). Sobald du die Warnung einmal weggeklickt hast, merkt sich dein OS das.
+
+### macOS „App ist beschädigt und kann nicht geöffnet werden"
+
+Seit macOS Catalina blockiert Gatekeeper nicht-signierte Apps mit dieser irreführenden Meldung. Die App ist nicht wirklich beschädigt — Safari hat ihr beim Download nur ein Quarantine-Attribut verpasst, und Gatekeeper verlangt für quarantänierte Apps eine Apple-Developer-Signatur die wir nicht haben.
+
+Im Terminal einmalig ausführen:
+
+```
+xattr -cr /Applications/Unfck\ Bandcamp.app
+```
+
+Danach öffnet sich die App ganz normal mit Doppelklick. Auto-Updates aus der App heraus laufen ohne Quarantäne, der Befehl muss also nur **einmal pro frischer Installation** ausgeführt werden.
 
 Auto-Updates sind aktiv: neue Versionen installieren sich beim nächsten App-Start automatisch.
 

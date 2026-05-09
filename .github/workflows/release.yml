@@ -133,9 +133,16 @@ jobs:
             gebundelt, keine Vorbedingungen auf dem Rechner.
 
             **Install (unsigned):**
-            - **Windows**: lad die `.msi` runter, doppelklick. Bei "Windows hat den PC geschützt" auf "Weitere Informationen" → "Trotzdem ausführen" klicken.
-            - **macOS**: lad die `.dmg` runter, mounte sie, ziehe die App in /Applications. Beim ersten Öffnen Rechtsklick → "Öffnen" → "Öffnen" — danach normal startbar.
-            - **Linux**: `.AppImage` runterladen, `chmod +x`, ausführen.
+
+            **Windows** — lad die `.exe` runter, doppelklick.
+            Bei "Windows hat den PC geschützt" auf "Weitere Informationen" → "Trotzdem ausführen" klicken.
+
+            **macOS** — lad die `.dmg` runter, mounte sie, ziehe die App in `/Applications`.
+            Beim ersten Öffnen meldet macOS: "Unfck Bandcamp.app ist beschädigt und kann nicht geöffnet werden". Das ist Apples Standard-Block für nicht-signierte Apps, die App ist nicht wirklich beschädigt. Ein Terminal-Befehl löst's:
+            ```
+            xattr -cr /Applications/Unfck\ Bandcamp.app
+            ```
+            Danach App normal öffnen. Muss nur einmal pro Installation gemacht werden, Auto-Updates kommen ohne Quarantäne.
 
             Auto-update ist aktiv — neue Releases installieren sich beim nächsten App-Start automatisch.
           releaseDraft: false

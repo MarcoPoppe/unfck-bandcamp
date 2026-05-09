@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import {
   getMinimizeToTray,
   isTauri,
+  openInDefaultBrowser,
   setMinimizeToTray,
   signInWithBandcamp,
 } from '@/lib/tauri/client';
@@ -781,7 +782,7 @@ function AppWindowSection() {
       <button
         type="button"
         onClick={() => {
-          window.open(`${window.location.origin}/`, '_blank', 'noopener');
+          void openInDefaultBrowser(`${window.location.origin}/`);
         }}
         className="mt-3 rounded border border-border bg-bg-elevated px-4 py-2 text-sm transition-colors hover:bg-bg-hover"
       >

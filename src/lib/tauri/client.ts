@@ -123,6 +123,21 @@ export async function tauriLog(
   }
 }
 
+/** Opens a URL in the user's default browser via Tauri's shell
+ * plugin. Frontend `window.open` is blocked by WebView2 inside
+ * the Tauri runtime, so this is the only way to actually launch
+ * Chrome/Edge/Safari from a button click. Same Custom-Command-
+ * bypass pattern as the updater commands. */
+export async function openInDefaultBrowser(url: string): Promise<void> {
+  if (!isTauri()) {
+    // Web/Docker build: fall back to native window.open. There's
+    // no embedded WebView blocking it.
+    window.open(url, '_blank', 'noopener');
+    return;
+  }
+  await invoke<void>('open_in_default_browser', { url });
+}
+
 /** Diagnostic: ask Rust to call the updater plugin directly. If this
  * succeeds but the frontend `invoke('plugin:updater|check')` fails with
  * an ACL error, we know the plugin is fine and the bug is in the
