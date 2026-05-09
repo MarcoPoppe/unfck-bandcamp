@@ -27,11 +27,27 @@ pub fn run() {
             // flag here is synchronous and runs inside the close-event
             // handler itself.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "main"
-                    && tray::should_minimize_to_tray(window.app_handle())
-                {
-                    api.prevent_close();
-                    let _ = window.hide();
+                if window.label() == "main" {
+                    if tray::should_minimize_to_tray(window.app_handle()) {
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // Explicit quit (not tray-hide): kill the
+                        // bundled Node sidecar so it doesn't outlive
+                        // the app. Without this, Tauri's child-handle
+                        // stays alive across the parent exit on
+                        // Windows, the loopback port stays bound, and
+                        // the next launch's stale-sidecar guard sees
+                        // "port already in use" and reuses the
+                        // zombie — which is why the app appears to
+                        // start instantly even though the user just
+                        // closed it.
+                        if let Some(handle) =
+                            window.app_handle().try_state::<sidecar::SidecarHandle>()
+                        {
+                            sidecar::kill(&handle);
+                        }
+                    }
                 }
             }
         })
@@ -770,6 +786,11 @@ mod tray {
                 }
                 "quit" => {
                     log::info!("tray: quit selected");
+                    if let Some(handle) =
+                        app.try_state::<super::sidecar::SidecarHandle>()
+                    {
+                        super::sidecar::kill(&handle);
+                    }
                     app.exit(0);
                 }
                 _ => {}
