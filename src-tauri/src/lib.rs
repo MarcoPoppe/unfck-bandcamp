@@ -248,6 +248,44 @@ mod commands {
             window.label(),
             window.url().ok().map(|u| u.to_string())
         );
+
+        // Prefer window.cookies() over cookies_for_url(): WebView2's
+        // GetCookies(uri) is matched against the request URI, which
+        // strips out cookies whose `Domain=` attribute targets a
+        // different host than the bare URL we ask for. Bandcamp sets
+        // `identity` and `js_logged_in` with Domain=.bandcamp.com on
+        // a Set-Cookie response that flows during the popup-login
+        // round-trip, so cookies_for_url("https://bandcamp.com/")
+        // returned 15 cookies (csrf_token, session, fan_visits,
+        // tracking junk) but neither of the two markers
+        // validateCookies() actually requires.
+        //
+        // window.cookies() returns the full webview cookie store, which
+        // we then filter by domain ourselves — that picks up cookies
+        // set on .bandcamp.com or any *.bandcamp.com subdomain too.
+        match window.cookies() {
+            Ok(cookies) => {
+                let names: Vec<&str> = cookies.iter().map(|c| c.name()).collect();
+                let domains: Vec<Option<&str>> =
+                    cookies.iter().map(|c| c.domain()).collect();
+                log::info!(
+                    "[cookie-diag] window.cookies() returned {} cookies: names={:?} domains={:?}",
+                    cookies.len(),
+                    names,
+                    domains
+                );
+                if !cookies.is_empty() {
+                    return Ok((cookies, false));
+                }
+            }
+            Err(e) => {
+                log::warn!("[cookie-diag] window.cookies() errored: {}", e);
+            }
+        }
+
+        // Fallback path for setups where window.cookies() returns
+        // nothing. This was the original v2.4.18 implementation —
+        // keep it as a safety net but it's rarely hit in practice.
         for url in ["https://bandcamp.com/", "https://www.bandcamp.com/"] {
             let parsed = Url::parse(url)
                 .map_err(|e| format!("failed to build Bandcamp cookie URL: {e}"))?;
@@ -270,24 +308,7 @@ mod commands {
             }
         }
 
-        match window.cookies() {
-            Ok(cookies) => {
-                let names: Vec<&str> = cookies.iter().map(|c| c.name()).collect();
-                let domains: Vec<Option<&str>> =
-                    cookies.iter().map(|c| c.domain()).collect();
-                log::info!(
-                    "[cookie-diag] window.cookies() returned {} cookies: names={:?} domains={:?}",
-                    cookies.len(),
-                    names,
-                    domains
-                );
-                Ok((cookies, false))
-            }
-            Err(e) => {
-                log::error!("[cookie-diag] window.cookies() errored: {}", e);
-                Err(format!("failed to read Bandcamp cookies from webview: {e}"))
-            }
-        }
+        Err("no cookies found in webview".into())
     }
 
     fn is_bandcamp_cookie_domain(domain: &str) -> bool {
