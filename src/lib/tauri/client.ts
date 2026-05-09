@@ -97,24 +97,11 @@ export interface UpdateInfo {
   date: string | null;
 }
 
-interface RustUpdateInfo {
-  version: string;
-  current_version?: string;
-  notes: string | null;
-  date: string | null;
-}
-
 export async function checkForAppUpdate(): Promise<UpdateInfo | null> {
   if (!isTauri()) return null;
   try {
-    const result = await invoke<RustUpdateInfo | null>('check_for_updates');
-    if (!result) return null;
-    return {
-      version: result.version,
-      currentVersion: result.current_version,
-      notes: result.notes,
-      date: result.date,
-    };
+    const result = await invoke<UpdateInfo | null>('check_for_updates');
+    return result ?? null;
   } catch (err) {
     console.warn('updater check failed', err);
     return null;

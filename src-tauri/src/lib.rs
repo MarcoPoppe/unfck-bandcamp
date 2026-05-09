@@ -159,7 +159,15 @@ mod commands {
     }
 
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct LoginResult {
+        // The frontend reads `result.cookieString` etc. (camelCase),
+        // but Tauri's default serde serialization keeps Rust field
+        // names verbatim, so the JSON we used to ship had snake_case
+        // keys (`cookie_string`). The mismatch made the frontend's
+        // `if (!result.cookieString)` always-truthy and the wizard
+        // fell through to the "no cookies" branch even when the
+        // Rust side returned a perfectly valid cookie string.
         pub cookie_string: String,
         pub fan_id: Option<u64>,
         pub username: Option<String>,
@@ -407,6 +415,7 @@ mod commands {
     }
 
     #[derive(serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
     pub struct UpdateInfo {
         pub version: String,
         pub current_version: String,
@@ -445,6 +454,15 @@ mod commands {
     /// command, so the frontend never has to touch the
     /// plugin:updater|download_and_install or plugin:process|restart
     /// IPC paths that the same ACL layer rejects.
+    ///
+    /// Before triggering the restart we explicitly kill the bundled
+    /// Node sidecar. Tauri's `app.restart()` only terminates its own
+    /// main process; child processes spawned via the shell plugin
+    /// keep running across the restart. The NSIS installer then can't
+    /// overwrite better_sqlite3.node (still locked by the live Node
+    /// process) and bails out with "Error opening file for writing"
+    /// — Marco hit that during the v2.4.21 update and had to click
+    /// "Ignore" to push through.
     #[tauri::command]
     pub async fn apply_update(app: AppHandle) -> Result<(), String> {
         use tauri_plugin_updater::UpdaterExt;
@@ -458,6 +476,13 @@ mod commands {
             .download_and_install(|_chunk_length, _content_length| {}, || {})
             .await
             .map_err(|e| e.to_string())?;
+        if let Some(handle) = app.try_state::<super::sidecar::SidecarHandle>() {
+            super::sidecar::kill(&handle);
+            // Give Windows a moment to release the file lock before
+            // the installer (about to be triggered by app.restart())
+            // tries to overwrite the standalone tree.
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        }
         app.restart();
     }
 
@@ -596,8 +621,26 @@ mod tray {
 
 mod sidecar {
     use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
     use tauri::{AppHandle, Manager};
-    use tauri_plugin_shell::process::CommandEvent;
+    use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+
+    /// App-state container for the spawned Next.js sidecar process so
+    /// other commands (notably apply_update) can terminate it before
+    /// Tauri's own restart kicks in. The NSIS installer fails with
+    /// "Error opening file for writing" on better_sqlite3.node when
+    /// the Node process is still holding the .node binary, and Tauri
+    /// only kills its own main process on restart — not children
+    /// spawned via the shell plugin.
+    pub struct SidecarHandle(pub Mutex<Option<CommandChild>>);
+
+    pub fn kill(handle: &SidecarHandle) {
+        if let Ok(mut guard) = handle.0.lock() {
+            if let Some(child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+    }
     use tauri_plugin_shell::ShellExt;
 
     /// Tauri's resource_dir() returns Windows extended-length paths like
@@ -694,7 +737,7 @@ mod sidecar {
         // `require('./.next/server/...')` style relative loads, which
         // only resolve correctly when Node is running with that
         // directory as its working directory.
-        let (mut rx, _child) = app
+        let (mut rx, child) = app
             .shell()
             .sidecar("node")?
             .args(["server.js"])
@@ -705,6 +748,11 @@ mod sidecar {
             .env("UNFCK_DATA_DIR", data_dir_str)
             .env("UNFCK_SECRET_PATH", secret_path_str)
             .spawn()?;
+        // Keep the child handle in app state so apply_update can kill
+        // the sidecar before triggering a restart — otherwise the
+        // Node process keeps better_sqlite3.node locked and the NSIS
+        // installer aborts with "Error opening file for writing".
+        app.manage(SidecarHandle(Mutex::new(Some(child))));
 
         // Pipe sidecar stdout/stderr into our log so we can diagnose
         // boot failures from the user's machine. Writes go to whatever
