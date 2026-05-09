@@ -3,7 +3,13 @@ import { getStoredAuth } from '../auth/store';
 import { fetchArtistOverview } from '../bandcamp/fetch_artist';
 import { fetchReleasePage } from '../bandcamp/fetch_release';
 import { fetchDiggerProfile } from '../bandcamp/fetch_digger';
-import { listFollowedArtists, listFollowedDiggers, upsertArtist } from '../entities/store';
+import {
+  listArtistsTaggedToPlaylist,
+  listDiggersTaggedToPlaylist,
+  listFollowedArtists,
+  listFollowedDiggers,
+  upsertArtist,
+} from '../entities/store';
 import { listDiggerCollection } from './digger_collection';
 import { recordSyncError } from './errors_store';
 
@@ -194,6 +200,11 @@ interface ProgressOpts {
    * inner crawls update after each batch and check at the top of
    * each iteration. */
   tracker?: TrackBudget;
+  /** When set, the crawl is scoped to artists + curators tagged
+   * into this playlist (Pfad A). Without it, the full follow list
+   * is used. Lets the user run a Minimal-only crawl from the
+   * Minimal bucket without crawling Tech-House sources too. */
+  playlistScopeId?: number;
 }
 
 export interface TrackBudget {
@@ -208,7 +219,9 @@ export async function syncFollowedArtistsDiscovery(
   if (!auth) throw new Error('no auth stored');
 
   const startedAt = Date.now();
-  const followed = listFollowedArtists();
+  const followed = opts?.playlistScopeId
+    ? listArtistsTaggedToPlaylist(opts.playlistScopeId)
+    : listFollowedArtists();
   const errors: DiscoverySyncResult['errors'] = [];
   let releasesFetched = 0;
   let tracksWritten = 0;
@@ -345,7 +358,9 @@ export async function syncFollowedDiggersDiscovery(
   if (!auth) throw new Error('no auth stored');
 
   const startedAt = Date.now();
-  const followed = listFollowedDiggers();
+  const followed = opts?.playlistScopeId
+    ? listDiggersTaggedToPlaylist(opts.playlistScopeId)
+    : listFollowedDiggers();
   const errors: DiscoverySyncResult['errors'] = [];
   let releasesFetched = 0;
   let tracksWritten = 0;
@@ -506,6 +521,9 @@ export async function syncFollowedDiscovery(
      * and stop" mode. Without it, both inner crawls run until
      * their own per-source caps. */
     targetTrackCount?: number;
+    /** Restrict the crawl to artists + curators tagged into this
+     * playlist. The full follow list is used if undefined. */
+    playlistScopeId?: number;
   },
 ): Promise<DiscoverySyncResult> {
   const startedAt = Date.now();
@@ -528,6 +546,7 @@ export async function syncFollowedDiscovery(
       runId: runId ?? null,
       releasesPerArtist: caps?.releasesPerArtist,
       tracker,
+      playlistScopeId: caps?.playlistScopeId,
     });
     totalReleases = a.releasesFetched;
     if (runId != null) {
@@ -548,6 +567,7 @@ export async function syncFollowedDiscovery(
             runId: runId ?? null,
             releasesPerDigger: caps?.releasesPerDigger,
             tracker,
+            playlistScopeId: caps?.playlistScopeId,
           });
     totalReleases = a.releasesFetched + d.releasesFetched;
     if (runId != null) {

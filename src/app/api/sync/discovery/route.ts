@@ -25,6 +25,9 @@ interface PostBody {
    * as soon as the count is reached, so a 50-target run no longer
    * has to drain every followed artist before it stops. */
   targetTrackCount?: number;
+  /** Restrict the crawl to artists + curators tagged into this
+   * playlist (Pfad A). When unset, the full follow list is used. */
+  playlistScopeId?: number;
 }
 
 function clampPositiveInt(raw: unknown, max: number): number | undefined {
@@ -46,6 +49,7 @@ export async function POST(req: Request) {
     releasesPerArtist: clampPositiveInt(body.releasesPerArtist, 200),
     releasesPerDigger: clampPositiveInt(body.releasesPerDigger, 1000),
     targetTrackCount: clampPositiveInt(body.targetTrackCount, 5000),
+    playlistScopeId: clampPositiveInt(body.playlistScopeId, 1_000_000),
   };
   // If a sync is already running, return its row instead of starting a new
   // one — protects against double-click and panel-juggling.

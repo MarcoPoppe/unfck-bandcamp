@@ -224,6 +224,51 @@ export function listFollowedArtists(): ArtistRow[] {
   }));
 }
 
+/**
+ * Like listFollowedArtists, but scoped to a specific playlist's tagged
+ * artists (Mig 20 / Pfad A: playlists are genre buckets that carry
+ * artists too). Used by the Discover crawl when the user picks
+ * "Source: playlist X" — only the artists tagged into that bucket get
+ * crawled, not the user's whole follow list. Followed-status is
+ * irrelevant here; tag membership is the criterion.
+ */
+export function listArtistsTaggedToPlaylist(playlistId: number): ArtistRow[] {
+  const rows = getDb()
+    .prepare<
+      [number],
+      {
+        id: number;
+        bc_url: string;
+        name: string;
+        bc_band_id: number | null;
+        image_url: string | null;
+        added_at: string;
+        last_crawled_at: string | null;
+        followed: number;
+      }
+    >(
+      `SELECT a.id, a.bc_url, a.name, a.bc_band_id, a.image_url, a.added_at, a.last_crawled_at,
+              CASE WHEN f.entity_id IS NULL THEN 0 ELSE 1 END AS followed
+         FROM artists a
+         INNER JOIN playlist_artists pa ON pa.artist_id = a.id
+         LEFT JOIN following f
+           ON f.entity_type = 'artist' AND f.entity_id = a.id
+         WHERE pa.playlist_id = ?
+         ORDER BY pa.added_at DESC`,
+    )
+    .all(playlistId);
+  return rows.map((r) => ({
+    id: r.id,
+    bcUrl: r.bc_url,
+    name: r.name,
+    bcBandId: r.bc_band_id,
+    imageUrl: r.image_url,
+    addedAt: r.added_at,
+    lastCrawledAt: r.last_crawled_at,
+    isFollowed: r.followed === 1,
+  }));
+}
+
 export function listFollowedLabels(): LabelRow[] {
   const rows = getDb()
     .prepare<
@@ -283,6 +328,45 @@ export function listFollowedDiggers(): DiggerRow[] {
     addedAt: r.added_at,
     lastCrawledAt: r.last_crawled_at,
     isFollowed: true,
+  }));
+}
+
+/** Curators tagged into a specific playlist — the digger-side
+ * counterpart to listArtistsTaggedToPlaylist. */
+export function listDiggersTaggedToPlaylist(playlistId: number): DiggerRow[] {
+  const rows = getDb()
+    .prepare<
+      [number],
+      {
+        id: number;
+        bc_username: string;
+        bc_fan_id: number | null;
+        display_name: string | null;
+        image_url: string | null;
+        added_at: string;
+        last_crawled_at: string | null;
+        followed: number;
+      }
+    >(
+      `SELECT d.id, d.bc_username, d.bc_fan_id, d.display_name, d.image_url, d.added_at, d.last_crawled_at,
+              CASE WHEN f.entity_id IS NULL THEN 0 ELSE 1 END AS followed
+         FROM diggers d
+         INNER JOIN playlist_curators pc ON pc.digger_id = d.id
+         LEFT JOIN following f
+           ON f.entity_type = 'digger' AND f.entity_id = d.id
+         WHERE pc.playlist_id = ?
+         ORDER BY pc.added_at DESC`,
+    )
+    .all(playlistId);
+  return rows.map((r) => ({
+    id: r.id,
+    bcUsername: r.bc_username,
+    bcFanId: r.bc_fan_id,
+    displayName: r.display_name,
+    imageUrl: r.image_url,
+    addedAt: r.added_at,
+    lastCrawledAt: r.last_crawled_at,
+    isFollowed: r.followed === 1,
   }));
 }
 

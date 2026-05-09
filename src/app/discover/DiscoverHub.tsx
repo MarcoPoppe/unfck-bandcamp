@@ -390,12 +390,30 @@ function TracksTab({
   // "Deep crawl" → 1000, "All" → unlimited.
   const TRACK_BUDGET_OPTIONS = [50, 100, 200, 500, 1000, 0] as const;
   const [trackBudget, setTrackBudget] = useState<number>(200);
+  // Discover scope: 0 = "all follows" (default), positive = playlist id
+  // (Pfad A — only the artists + curators tagged into that playlist
+  // get crawled). UI shows a dropdown next to the budget so a Minimal
+  // bucket can be discovered without dragging in the Tech-House follows.
+  const [scopePlaylistId, setScopePlaylistId] = useState<number>(0);
+  const [scopePlaylists, setScopePlaylists] = useState<{ id: number; name: string }[]>([]);
   useEffect(() => {
     const t = Number(localStorage.getItem('unfck.discovery.track_budget'));
     if (Number.isInteger(t) && t >= 0) setTrackBudget(t);
+    const s = Number(localStorage.getItem('unfck.discovery.scope_playlist_id'));
+    if (Number.isInteger(s) && s >= 0) setScopePlaylistId(s);
+    // Lightweight fetch for the source-dropdown. Playlists is the
+    // same endpoint the curators tab uses; we just want the {id, name}
+    // pairs here, not the track counts.
+    void fetch('/api/playlists')
+      .then((r) => r.json() as Promise<{ playlists?: { id: number; name: string }[] }>)
+      .then((j) => setScopePlaylists(j.playlists ?? []))
+      .catch(() => {});
   }, []);
   function saveBudget(value: number) {
     localStorage.setItem('unfck.discovery.track_budget', String(value));
+  }
+  function saveScope(value: number) {
+    localStorage.setItem('unfck.discovery.scope_playlist_id', String(value));
   }
   useGlobalPlaybackShortcuts();
 
@@ -460,6 +478,9 @@ function TracksTab({
           // 0 means "no budget, run full per-source defaults"; we send
           // undefined in that case so the server uses its own caps.
           targetTrackCount: trackBudget > 0 ? trackBudget : undefined,
+          // 0 = all follows; positive = scope to that playlist's tagged
+          // artists + curators only.
+          playlistScopeId: scopePlaylistId > 0 ? scopePlaylistId : undefined,
         }),
       });
       const json = (await res.json()) as {
@@ -632,6 +653,27 @@ function TracksTab({
           {TRACK_BUDGET_OPTIONS.map((n) => (
             <option key={n} value={n}>
               {n === 0 ? 'all' : n}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="flex flex-col gap-1 text-xs text-fg-muted">
+        <span>Source</span>
+        <select
+          value={scopePlaylistId}
+          onChange={(e) => {
+            const n = Number(e.target.value);
+            if (Number.isInteger(n) && n >= 0) {
+              setScopePlaylistId(n);
+              saveScope(n);
+            }
+          }}
+          className="rounded border border-border bg-bg-base px-2 py-1 text-sm text-fg-primary focus:border-accent focus:outline-none"
+        >
+          <option value={0}>All follows</option>
+          {scopePlaylists.map((p) => (
+            <option key={p.id} value={p.id}>
+              Playlist · {p.name}
             </option>
           ))}
         </select>

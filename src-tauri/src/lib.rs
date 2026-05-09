@@ -88,19 +88,50 @@ mod commands {
         }
         let label = format!("bc-login-{role}");
 
-        // Re-use an existing window if the user clicked again.
+        // Always close + re-open with a fresh data directory. Without
+        // this, WebView2 reuses the cookies from the previous login
+        // session — so when Marco linked his second (main) account
+        // after the burner, the popup opened already-logged-in as the
+        // burner and he had to click around until Bandcamp finally
+        // forgot the old session. Per-call data_directory isolates
+        // each sign-in attempt so the user always starts on a logged-
+        // out bandcamp.com/login screen.
         if let Some(existing) = app.get_webview_window(&label) {
-            existing.set_focus().ok();
-        } else {
-            let url = "https://bandcamp.com/login"
-                .parse()
-                .map_err(|e: url::ParseError| e.to_string())?;
-            WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
-                .title("Sign in to Bandcamp")
-                .inner_size(900.0, 700.0)
-                .build()
-                .map_err(|e| format!("failed to open login window: {e}"))?;
+            let _ = existing.close();
+            // Give Tauri a tick to release the window before we build
+            // a replacement under the same label.
+            tokio::time::sleep(Duration::from_millis(150)).await;
         }
+        let user_data_root = app
+            .path()
+            .app_local_data_dir()
+            .map_err(|e| e.to_string())?
+            .join("login-webview");
+        let _ = std::fs::create_dir_all(&user_data_root);
+        // Best-effort cleanup of any login-webview directories left
+        // behind by previous attempts so the disk doesn't grow with
+        // every Sign-In click.
+        if let Ok(entries) = std::fs::read_dir(&user_data_root) {
+            for entry in entries.flatten() {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+        let session_id = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let session_dir = user_data_root.join(format!("{}-{}", role, session_id));
+        let _ = std::fs::create_dir_all(&session_dir);
+
+        let url = "https://bandcamp.com/login"
+            .parse()
+            .map_err(|e: url::ParseError| e.to_string())?;
+        WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
+            .title("Sign in to Bandcamp")
+            .inner_size(900.0, 700.0)
+            .data_directory(session_dir)
+            .build()
+            .map_err(|e| format!("failed to open login window: {e}"))?;
 
         // Poll the WebView URL up to 5 minutes. When it lands on a
         // post-login page (anything under bandcamp.com/<something>
