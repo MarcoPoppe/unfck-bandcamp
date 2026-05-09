@@ -520,14 +520,14 @@ mod commands {
     /// plugin:updater|download_and_install or plugin:process|restart
     /// IPC paths that the same ACL layer rejects.
     ///
-    /// Before triggering the restart we explicitly kill the bundled
-    /// Node sidecar. Tauri's `app.restart()` only terminates its own
-    /// main process; child processes spawned via the shell plugin
-    /// keep running across the restart. The NSIS installer then can't
-    /// overwrite better_sqlite3.node (still locked by the live Node
-    /// process) and bails out with "Error opening file for writing"
-    /// — Marco hit that during the v2.4.21 update and had to click
-    /// "Ignore" to push through.
+    /// We kill the bundled Node sidecar **before** download_and_install
+    /// runs, not before app.restart(). The Tauri updater's
+    /// download_and_install spawns the NSIS installer mid-call, and the
+    /// installer immediately tries to overwrite better_sqlite3.node —
+    /// which the live Node sidecar still has open. v2.4.22 killed the
+    /// sidecar after install instead and Marco still saw the
+    /// "Error opening file for writing" dialog during the v2.4.24 →
+    /// v2.4.25 update for that reason.
     #[tauri::command]
     pub async fn apply_update(app: AppHandle) -> Result<(), String> {
         use tauri_plugin_updater::UpdaterExt;
@@ -537,17 +537,17 @@ mod commands {
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "no update available".to_string())?;
+        if let Some(handle) = app.try_state::<super::sidecar::SidecarHandle>() {
+            super::sidecar::kill(&handle);
+            // Give Windows a moment to release the .node file lock
+            // before the installer that download_and_install is about
+            // to spawn tries to overwrite the standalone tree.
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
+        }
         update
             .download_and_install(|_chunk_length, _content_length| {}, || {})
             .await
             .map_err(|e| e.to_string())?;
-        if let Some(handle) = app.try_state::<super::sidecar::SidecarHandle>() {
-            super::sidecar::kill(&handle);
-            // Give Windows a moment to release the file lock before
-            // the installer (about to be triggered by app.restart())
-            // tries to overwrite the standalone tree.
-            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
-        }
         app.restart();
     }
 
