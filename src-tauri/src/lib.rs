@@ -142,15 +142,39 @@ mod commands {
         let session_dir = user_data_root.join(format!("{}-{}", role, session_id));
         let _ = std::fs::create_dir_all(&session_dir);
 
-        let url = "https://bandcamp.com/login"
+        let blank_url: url::Url = "about:blank"
             .parse()
             .map_err(|e: url::ParseError| e.to_string())?;
-        WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(url))
-            .title("Sign in to Bandcamp")
-            .inner_size(900.0, 700.0)
-            .data_directory(session_dir)
-            .build()
-            .map_err(|e| format!("failed to open login window: {e}"))?;
+        let login_url: url::Url = "https://bandcamp.com/login"
+            .parse()
+            .map_err(|e: url::ParseError| e.to_string())?;
+        let login_window =
+            WebviewWindowBuilder::new(&app, &label, WebviewUrl::External(blank_url))
+                .title("Sign in to Bandcamp")
+                .inner_size(900.0, 700.0)
+                .data_directory(session_dir)
+                .build()
+                .map_err(|e| format!("failed to open login window: {e}"))?;
+
+        // data_directory() doesn't reliably isolate WebView2 profiles
+        // on Windows — webviews in the same Tauri process tend to
+        // share cookies once the first one has touched bandcamp.com.
+        // Without an explicit wipe, opening the main-account login
+        // while the burner identity cookie was still in the shared
+        // store made the polling loop below close the window within
+        // 500 ms with the burner's cookies attached. The flow looked
+        // like "popup flashes open, instantly closes, app is signed
+        // in as burner again". Loading about:blank first and clearing
+        // browsing data before navigating to /login guarantees the
+        // request hits Bandcamp without a pre-existing identity.
+        let _ = login_window.clear_all_browsing_data();
+        if let Err(e) = login_window.navigate(login_url) {
+            log::warn!("[bc-login] navigate to /login after wipe failed: {e}");
+        }
+        // Grace period so the post-wipe navigation has time to leave
+        // about:blank and the cookie store is observably empty before
+        // the detector starts looking for an identity cookie.
+        tokio::time::sleep(Duration::from_millis(1500)).await;
 
         // Poll the WebView for one of two signals up to 5 minutes:
         //   (a) URL transitions onto a /<username> profile path —
