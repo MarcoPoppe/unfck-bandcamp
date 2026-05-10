@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type { PlaylistRow } from '@/lib/library/playlists';
+import { confirm } from '@/lib/ui/confirmStore';
 
 export default function PlaylistsClient({ initialPlaylists }: { initialPlaylists: PlaylistRow[] }) {
   const [playlists, setPlaylists] = useState<PlaylistRow[]>(initialPlaylists);
@@ -35,7 +36,12 @@ export default function PlaylistsClient({ initialPlaylists }: { initialPlaylists
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this playlist?')) return;
+    const ok = await confirm({
+      title: 'Delete this playlist?',
+      message: 'The playlist and its track assignments will be removed.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     const res = await fetch('/api/playlists', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

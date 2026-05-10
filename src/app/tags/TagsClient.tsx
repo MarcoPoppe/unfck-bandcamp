@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { TagRow } from '@/lib/library/tags';
+import { confirm } from '@/lib/ui/confirmStore';
 
 export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
   const [tags, setTags] = useState<TagRow[]>(initialTags);
@@ -40,7 +41,12 @@ export default function TagsClient({ initialTags }: { initialTags: TagRow[] }) {
   }
 
   async function handleDelete(id: number) {
-    if (!confirm('Delete this tag? All track assignments will be lost.')) return;
+    const ok = await confirm({
+      title: 'Delete this tag?',
+      message: 'All track assignments will be lost.',
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
     const res = await fetch('/api/tags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

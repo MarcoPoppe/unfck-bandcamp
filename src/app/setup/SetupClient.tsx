@@ -14,6 +14,7 @@ import PreferencesEditor from '@/components/PreferencesEditor';
 import DatabaseInspector from '@/components/DatabaseInspector';
 import DiagnosticsPanel from '@/components/DiagnosticsPanel';
 import { formatDateTime } from '@/lib/util/datetime';
+import { confirm } from '@/lib/ui/confirmStore';
 
 interface SyncRun {
   id: number;
@@ -190,13 +191,12 @@ export default function SetupClient({ initial }: { initial: InitialState }) {
 
   async function handleLogout(role: Role) {
     const label = role === 'crawler' ? 'crawler' : 'main account';
-    if (
-      !confirm(
-        `Sign out of the ${label}? This deletes the stored cookies for this slot.`,
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Sign out of ${label}?`,
+      message: `This deletes the stored cookies for this slot.`,
+      confirmLabel: 'Sign out',
+    });
+    if (!ok) return;
     setLoggingOut(role);
     setMessage(null);
     try {

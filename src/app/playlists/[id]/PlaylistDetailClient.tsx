@@ -10,6 +10,7 @@ import type {
   PlaylistCuratorRow,
   PlaylistTrack,
 } from '@/lib/library/playlists';
+import { confirm } from '@/lib/ui/confirmStore';
 
 interface Props {
   playlistId: number;
@@ -35,7 +36,11 @@ export default function PlaylistDetailClient({
   const setQueue = usePlayerStore((s) => s.setQueue);
 
   async function untagArtist(artistId: number) {
-    if (!confirm('Remove this artist from the playlist?')) return;
+    const ok = await confirm({
+      message: 'Remove this artist from the playlist?',
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/playlists/${playlistId}/artists`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -45,7 +50,11 @@ export default function PlaylistDetailClient({
   }
 
   async function untagCurator(diggerId: number) {
-    if (!confirm('Remove this curator from the playlist?')) return;
+    const ok = await confirm({
+      message: 'Remove this curator from the playlist?',
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
     const res = await fetch(`/api/playlists/${playlistId}/curators`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -10,6 +10,7 @@ import {
   type ReleaseSummary,
   type UpdateInfo,
 } from '@/lib/tauri/client';
+import { confirm } from '@/lib/ui/confirmStore';
 
 type CheckState =
   | { kind: 'idle' }
@@ -54,12 +55,12 @@ export default function AboutPanel({ version }: { version: string }) {
   }
 
   async function installVersion(v: string) {
-    if (
-      !confirm(
-        `Install v${v}? Your current DB is backed up to unfck.db.before-v${version}.bak first. The app will close while the installer runs.`,
-      )
-    )
-      return;
+    const ok = await confirm({
+      title: `Install v${v}?`,
+      message: `Your current DB is backed up to unfck.db.before-v${version}.bak first. The app will close while the installer runs.`,
+      confirmLabel: `Install v${v}`,
+    });
+    if (!ok) return;
     setInstallingVersion(v);
     try {
       await installSpecificVersion(v);

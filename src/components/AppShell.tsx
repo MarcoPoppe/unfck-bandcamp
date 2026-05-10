@@ -7,6 +7,7 @@ import UnfckBandcampLogo from './UnfckBandcampLogo';
 import Tooltip from './Tooltip';
 import UpdaterBanner from './UpdaterBanner';
 import StickyPlayerBar from './StickyPlayerBar';
+import ConfirmDialog from './ConfirmDialog';
 import { usePlayerStore } from '@/lib/store/player';
 
 interface NavItem {
@@ -343,6 +344,7 @@ export default function AppShell({
         each page mounted its own copy.
       */}
       <StickyPlayerBar />
+      <ConfirmDialog />
     </>
   );
 }
