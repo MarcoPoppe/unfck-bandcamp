@@ -363,6 +363,7 @@ export default function TrackRow({
             {resolvedTitleHref ? (
               <Link
                 href={resolvedTitleHref}
+                prefetch={false}
                 className="truncate hover:underline"
                 title="Open track page (middle-click for new tab)"
               >

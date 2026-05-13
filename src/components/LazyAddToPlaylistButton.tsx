@@ -29,6 +29,11 @@ export default function LazyAddToPlaylistButton({
   const [resolved, setResolved] = useState<number | null>(trackId);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True only when THIS wrapper just resolved on a user click, so we
+  // can auto-open the dropdown that mounts on re-render. Stays false
+  // when the parent passed in a known trackId, so a fresh mount in
+  // the sticky-player on track-change doesn't fly the menu open.
+  const [autoOpen, setAutoOpen] = useState(false);
 
   async function ensure(): Promise<number | null> {
     if (resolved != null) return resolved;
@@ -52,6 +57,7 @@ export default function LazyAddToPlaylistButton({
         setError(json.error ?? 'Could not import track');
         return null;
       }
+      setAutoOpen(true);
       setResolved(json.result.trackId);
       return json.result.trackId;
     } catch (err) {
@@ -63,7 +69,7 @@ export default function LazyAddToPlaylistButton({
   }
 
   if (resolved != null) {
-    return <AddToPlaylistButton trackId={resolved} />;
+    return <AddToPlaylistButton trackId={resolved} initiallyOpen={autoOpen} />;
   }
 
   return (

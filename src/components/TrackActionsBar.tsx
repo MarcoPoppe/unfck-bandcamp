@@ -43,8 +43,14 @@ export default function TrackActionsBar(props: Props) {
   const [localTrackId, setLocalTrackId] = useState<number | null>(props.localTrackId);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // True when the most recent resolve was triggered by clicking the
+  // playlist stub, so the freshly-mounted AddToPlaylistButton opens its
+  // dropdown without a second click. Cleared on the next user action.
+  const [playlistAutoOpen, setPlaylistAutoOpen] = useState(false);
 
-  async function ensureResolved(): Promise<number | null> {
+  async function ensureResolved(
+    opts?: { autoOpenPlaylist?: boolean },
+  ): Promise<number | null> {
     if (localTrackId != null) return localTrackId;
     if (resolving) return null;
     setResolving(true);
@@ -72,6 +78,7 @@ export default function TrackActionsBar(props: Props) {
         setError(json.error ?? 'Could not import track');
         return null;
       }
+      if (opts?.autoOpenPlaylist) setPlaylistAutoOpen(true);
       setLocalTrackId(json.result.trackId);
       return json.result.trackId;
     } catch (err) {
@@ -107,9 +114,12 @@ export default function TrackActionsBar(props: Props) {
           Hidden in best-of / curator lists where it's overkill. */}
       {showPlaylist &&
         (localTrackId != null ? (
-          <AddToPlaylistButton trackId={localTrackId} />
+          <AddToPlaylistButton trackId={localTrackId} initiallyOpen={playlistAutoOpen} />
         ) : (
-          <LazyPlaylistStub onResolve={ensureResolved} resolving={resolving} />
+          <LazyPlaylistStub
+            onResolve={() => ensureResolved({ autoOpenPlaylist: true })}
+            resolving={resolving}
+          />
         ))}
 
       {/* Follow artist + (optional) label. Both buttons hit /api/follow which

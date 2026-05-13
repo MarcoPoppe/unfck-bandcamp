@@ -12,6 +12,10 @@ interface PlaylistOption {
 
 interface Props {
   trackId: number;
+  /** Open the dropdown immediately on mount. Used by the Lazy* wrappers
+   * after a successful /api/track/lookup so the user doesn't have to
+   * click twice (once to resolve, once to open). */
+  initiallyOpen?: boolean;
 }
 
 /**
@@ -25,8 +29,8 @@ interface Props {
  * Naming kept as `AddToPlaylistButton` for grep continuity; the file now
  * also handles removal.
  */
-export default function AddToPlaylistButton({ trackId }: Props) {
-  const [open, setOpen] = useState(false);
+export default function AddToPlaylistButton({ trackId, initiallyOpen = false }: Props) {
+  const [open, setOpen] = useState(initiallyOpen);
   const [playlists, setPlaylists] = useState<PlaylistOption[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,6 +61,19 @@ export default function AddToPlaylistButton({ trackId }: Props) {
     if (open) document.addEventListener('mousedown', onClick);
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
+
+  // initiallyOpen: load options and compute flip direction on first mount
+  // so the Lazy* wrappers don't need a second click after they resolve.
+  useEffect(() => {
+    if (!initiallyOpen) return;
+    if (ref.current) {
+      const rect = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 360);
+    }
+    void loadOptions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function loadOptions() {
     setLoading(true);
@@ -195,7 +212,7 @@ export default function AddToPlaylistButton({ trackId }: Props) {
       </Tooltip>
       {open && (
         <div
-          className={`absolute right-0 z-20 w-64 rounded border border-border bg-bg-elevated p-2 shadow-lg ${
+          className={`absolute right-0 z-50 w-64 rounded border border-border bg-bg-elevated p-2 shadow-lg ${
             openUpward ? 'bottom-10' : 'top-10'
           }`}
         >

@@ -4,6 +4,7 @@ import { getStoredAuth } from '@/lib/auth/store';
 import { getDb } from '@/lib/db';
 import { fetchDiggerProfile } from '@/lib/bandcamp/fetch_digger';
 import { getDiggerDetail } from '@/lib/sync/diggers';
+import { upsertDigger } from '@/lib/entities/store';
 import {
   getDiggerCrawlStatus,
   listDiggerCollection,
@@ -71,7 +72,24 @@ export default async function UserProfilePage({
   }
 
   const existing = findExistingDigger(profile?.username ?? username);
-  const persisted = existing ? getDiggerDetail(existing.id) : null;
+  // When the user lands on a curator that's never been seen before, upsert
+  // a minimal `diggers` row so the AddEntityToPlaylistButton (and any other
+  // tagging UI) has a real diggerId to POST against. Without this the page
+  // rendered with diggerId=0 and the playlist-tag dropdown silently fell
+  // back to "No playlists yet" because the route rejected diggerId<=0
+  // (Susi report 2026-05-13). Follow/ignore stay opt-in.
+  const wasExistingBeforeVisit = existing != null;
+  const ensuredDiggerId =
+    existing?.id ??
+    (profile
+      ? upsertDigger({
+          bcUsername: profile.username,
+          bcFanId: profile.fanId,
+          displayName: profile.displayName,
+          imageUrl: profile.imageUrl,
+        })
+      : null);
+  const persisted = ensuredDiggerId ? getDiggerDetail(ensuredDiggerId) : null;
 
   const detail = persisted
     ? {
@@ -203,7 +221,7 @@ export default async function UserProfilePage({
         collectionItems={collectionItems}
         profileError={profileError}
         crawlStatus={crawlStatus}
-        ephemeral={!persisted}
+        ephemeral={!wasExistingBeforeVisit}
       />
     </main>
   );

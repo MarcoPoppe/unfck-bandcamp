@@ -22,10 +22,10 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const target = url.searchParams.get('url');
   if (!target) {
-    return NextResponse.json(
-      { ok: false, error: 'url query param required' },
-      { status: 400 },
-    );
+    // No url param — likely a Next.js RSC prefetch ping (?_rsc=...) against
+    // this redirect handler. Answer 204 silently so the browser console
+    // doesn't fill up with 400s on every link hover.
+    return new NextResponse(null, { status: 204 });
   }
   try {
     const result = await lookupTrack(target);
