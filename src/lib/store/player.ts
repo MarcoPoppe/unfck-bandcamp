@@ -133,7 +133,20 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   isPlaying: false,
   playedBcTrackIds: new Set<number>(),
   wishlistedBcTrackIds: new Set<number>(),
-  setQueue: (queue) => set({ queue }),
+  setQueue: (queue) =>
+    set((state) => {
+      // Preserve the currently playing track when a page navigation
+      // installs a queue that doesn't contain it (e.g. opening a
+      // playlist while a Discover/Wishlist track is playing). Without
+      // this guard `current` resolves to null and StickyPlayerBar's
+      // track-change effect calls ws.empty(), so audio stops mid-track
+      // on what looks like an unrelated route change.
+      if (state.currentId == null) return { queue };
+      if (queue.some((t) => t.id === state.currentId)) return { queue };
+      const keep = state.queue.find((t) => t.id === state.currentId);
+      if (!keep) return { queue };
+      return { queue: [keep, ...queue] };
+    }),
   toggle: (id) => {
     const { queue, currentId, isPlaying } = get();
     const target = queue.find((t) => t.id === id);
