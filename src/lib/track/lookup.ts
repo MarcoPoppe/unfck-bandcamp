@@ -306,6 +306,7 @@ export interface TrackPermalinkData {
     artistLocalId: number | null;
     artistBcBandId: number | null;
     albumTitle: string | null;
+    albumUrl: string | null;
     bcUrl: string;
     coverUrl: string | null;
     durationSeconds: number | null;
@@ -341,6 +342,7 @@ export function getTrackPermalink(trackDbId: number): TrackPermalinkData | null 
     artist_name: string | null;
     artist_url: string | null;
     album_title: string | null;
+    album_url: string | null;
     bc_album_id: number | null;
     bc_url: string;
     cover_url: string | null;
@@ -361,8 +363,8 @@ export function getTrackPermalink(trackDbId: number): TrackPermalinkData | null 
       }
     >(
       `SELECT t.id, t.bc_track_id, t.title, t.artist_name, t.artist_url, t.album_title,
-              t.bc_album_id, t.bc_url, t.cover_url, t.duration_seconds, t.stream_url,
-              t.source_collection_item_id, t.track_number, t.artist_id,
+              t.album_url, t.bc_album_id, t.bc_url, t.cover_url, t.duration_seconds,
+              t.stream_url, t.source_collection_item_id, t.track_number, t.artist_id,
               a.bc_band_id AS artist_bc_band_id,
               t.label_id, l.name AS label_name, t.released_at
          FROM tracks t
@@ -411,6 +413,7 @@ export function getTrackPermalink(trackDbId: number): TrackPermalinkData | null 
       artistLocalId: row.artist_id,
       artistBcBandId: row.artist_bc_band_id,
       albumTitle: row.album_title,
+      albumUrl: row.album_url,
       bcUrl: row.bc_url,
       coverUrl: row.cover_url,
       durationSeconds: row.duration_seconds,

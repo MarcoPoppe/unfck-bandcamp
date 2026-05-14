@@ -732,8 +732,18 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
               'unknown artist'
             )}
           </div>
-          {track.albumTitle && (
-            <div className="text-sm text-fg-muted">From {track.albumTitle}</div>
+          {track.albumUrl ? (
+            <a
+              href={`/track/go?url=${encodeURIComponent(track.albumUrl)}`}
+              className="text-sm text-fg-muted hover:text-accent hover:underline"
+              title="Open this release (middle-click for new tab)"
+            >
+              From {track.albumTitle ?? 'this release'} →
+            </a>
+          ) : (
+            track.albumTitle && (
+              <div className="text-sm text-fg-muted">From {track.albumTitle}</div>
+            )
           )}
           {track.labelName && (
             <div className="mt-0.5 text-sm">
@@ -855,7 +865,7 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
               type="button"
               onClick={runBestOf}
               disabled={bestOfRunning}
-              className="rounded border border-border bg-bg-elevated px-3 py-1 text-xs transition-colors hover:bg-bg-hover disabled:opacity-50"
+              className="rounded border border-border bg-bg-elevated px-3 py-1.5 text-sm transition-colors hover:bg-bg-hover disabled:opacity-50"
             >
               {bestOfRunning
                 ? bestOf?.supportersTotal

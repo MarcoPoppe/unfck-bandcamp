@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import AddToPlaylistButton from './AddToPlaylistButton';
 import Tooltip from './Tooltip';
 
@@ -34,6 +34,19 @@ export default function LazyAddToPlaylistButton({
   // when the parent passed in a known trackId, so a fresh mount in
   // the sticky-player on track-change doesn't fly the menu open.
   const [autoOpen, setAutoOpen] = useState(false);
+
+  // The sticky player keeps this component mounted across track
+  // changes, so useState(trackId) only ever captures the FIRST track.
+  // Without this sync, switching from a Discover track (trackId=null,
+  // stub mode) to a normal track leaves `resolved` stuck at null and
+  // the real dropdown never renders — and switching the other way
+  // leaks a stale trackId into the new track's menu. Re-seed on every
+  // trackId prop change.
+  useEffect(() => {
+    setResolved(trackId);
+    setAutoOpen(false);
+    setError(null);
+  }, [trackId]);
 
   async function ensure(): Promise<number | null> {
     if (resolved != null) return resolved;
