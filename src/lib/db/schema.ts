@@ -708,4 +708,35 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 23,
+    name: 'phase_aj_wishlist_status_default_backfill',
+    up: (db) => {
+      // Mig 22's wishlist_new declared `status TEXT` without a default,
+      // dropping the implicit 'open' default the pre-Mig-22 table had.
+      // Every row inserted by addToWishlist() between Mig 22 and this
+      // migration carries status=NULL and is therefore invisible on the
+      // /wishlist UI (which filters WHERE status='open'). Backfill the
+      // NULLs to 'open' so existing wishes resurface; the addToWishlist
+      // INSERT statement was also fixed to set status='open' explicitly
+      // so new rows can't regress into the same hole.
+      //
+      // NULL rows that already have bought_at or dismissed_at are
+      // promoted to those statuses instead — defensive: if the same
+      // status-write bug ever bit reopenItem / dismissItem, this aligns
+      // them properly. Both setter paths happen to write status today,
+      // so this branch is normally a no-op.
+      db.prepare(
+        `UPDATE wishlist SET status = 'bought'
+           WHERE status IS NULL AND bought_at IS NOT NULL`,
+      ).run();
+      db.prepare(
+        `UPDATE wishlist SET status = 'dismissed'
+           WHERE status IS NULL AND dismissed_at IS NOT NULL`,
+      ).run();
+      db.prepare(
+        `UPDATE wishlist SET status = 'open' WHERE status IS NULL`,
+      ).run();
+    },
+  },
 ];

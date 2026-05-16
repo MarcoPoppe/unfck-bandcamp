@@ -54,6 +54,15 @@ export default function AddToPlaylistButton({ trackId, initiallyOpen = false }: 
   );
 
   useEffect(() => {
+    setOpen(initiallyOpen);
+    setPlaylists([]);
+    setLoaded(false);
+    setLoading(false);
+    setBusyIds(new Set());
+    setErrorMsg(null);
+  }, [trackId, initiallyOpen]);
+
+  useEffect(() => {
     function onClick(e: MouseEvent) {
       if (!ref.current) return;
       if (e.target instanceof Node && !ref.current.contains(e.target)) setOpen(false);

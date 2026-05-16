@@ -127,8 +127,8 @@ export function addToWishlist(input: AddInput): number {
     .prepare(
       `
       INSERT INTO wishlist
-        (bc_item_type, bc_track_id, bc_album_id, bc_url, title, artist_name, album_title, cover_url, source, added_at, mirror_state)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'local')
+        (bc_item_type, bc_track_id, bc_album_id, bc_url, title, artist_name, album_title, cover_url, source, added_at, mirror_state, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'local', 'open')
     `,
     )
     .run(
