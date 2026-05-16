@@ -605,8 +605,40 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
-  // (id 21 intentionally unused; phase_aj reserved 22 for the polymorphic
-  //  wishlist rebuild after the auth split / playlist buckets phases.)
+  {
+    id: 21,
+    name: 'phase_ai_auth_check_quote_fix',
+    up: (db) => {
+      // Mig 17 created the auth table with `CHECK (role IN ("crawler","main"))` —
+      // double-quoted string literals. SQLite 3.31+ treats double-quoted tokens
+      // as column references inside CHECK, not strings. Older SQLite tolerated
+      // this; 3.53 (current better-sqlite3) raises "no such column: crawler"
+      // whenever a subsequent DDL triggers schema re-validation (e.g. another
+      // table's DROP+RENAME). Mig 22's wishlist rebuild was the trigger. We
+      // rebuild auth here with single-quoted literals so every later migration
+      // can safely touch other tables.
+      db.prepare(
+        `CREATE TABLE auth_new (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           role TEXT NOT NULL CHECK (role IN ('crawler','main')) UNIQUE,
+           cookie_string TEXT NOT NULL,
+           fan_id INTEGER NOT NULL,
+           username TEXT NOT NULL,
+           email TEXT,
+           crawl_target_username TEXT,
+           updated_at TEXT NOT NULL
+         )`,
+      ).run();
+      db.prepare(
+        `INSERT INTO auth_new
+           (id, role, cookie_string, fan_id, username, email, crawl_target_username, updated_at)
+         SELECT id, role, cookie_string, fan_id, username, email, crawl_target_username, updated_at
+           FROM auth`,
+      ).run();
+      db.prepare('DROP TABLE auth').run();
+      db.prepare('ALTER TABLE auth_new RENAME TO auth').run();
+    },
+  },
   {
     id: 22,
     name: 'phase_aj_wishlist_polymorphic',
