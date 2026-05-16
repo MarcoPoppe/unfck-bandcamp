@@ -605,6 +605,8 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  // (id 21 intentionally unused; phase_aj reserved 22 for the polymorphic
+  //  wishlist rebuild after the auth split / playlist buckets phases.)
   {
     id: 22,
     name: 'phase_aj_wishlist_polymorphic',
@@ -661,6 +663,16 @@ export const migrations: Migration[] = [
       ).run();
       db.prepare(
         `CREATE INDEX idx_wishlist_mirror_state ON wishlist(mirror_state) WHERE mirror_state IN ('pushing','push_failed')`,
+      ).run();
+      // Re-create the indexes that lived on the pre-Mig22 wishlist table
+      // (originally added by Mig 7). DROP TABLE removed them along with the
+      // old table, so the wishlist UI's status filters and added_at sort
+      // would otherwise regress to full table scans.
+      db.prepare(
+        'CREATE INDEX idx_wishlist_status ON wishlist (status)',
+      ).run();
+      db.prepare(
+        'CREATE INDEX idx_wishlist_added_at ON wishlist (added_at DESC)',
       ).run();
     },
   },

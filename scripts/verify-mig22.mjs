@@ -3,9 +3,14 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import os from 'node:os';
+import { existsSync } from 'node:fs';
 
 const dbPath = process.env.DATABASE_PATH
   ?? path.join(os.homedir(), 'AppData/Roaming/com.unfck.bandcamp/data/unfck.db');
+if (!existsSync(dbPath)) {
+  console.error('DB not found:', dbPath);
+  process.exit(2);
+}
 const db = new Database(dbPath, { readonly: true });
 
 const cols = db.prepare('PRAGMA table_info(wishlist)').all().map((c) => c.name);
@@ -21,4 +26,5 @@ const missingIdx = expectedIdx.filter((i) => !idx.includes(i));
 if (missingIdx.length) { console.error('MISSING INDEX:', missingIdx); process.exit(1); }
 
 const rowCount = db.prepare('SELECT COUNT(*) AS n FROM wishlist').get().n;
+db.close();
 console.log(`OK: ${cols.length} columns, ${idx.length} indexes, ${rowCount} rows preserved.`);
