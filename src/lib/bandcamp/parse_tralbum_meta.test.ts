@@ -49,12 +49,24 @@ describe('parseTralbumMeta', () => {
 });
 
 describe('extractRefTokenFromSessionCookie', () => {
-  it('pulls the freshest ref token out of the session cookie r:[...] array', () => {
+  it('pulls the freshest album ref token out of r:[...]', () => {
     const raw =
       'session=1%09t%3A1778905701%09r%3A%5B%22337922181t3127876176a2673726244x1778929730%22%2C%228443f0t3127876176x1778929712%22%5D%09bp%3A1%09c%3A1; identity=junk';
     expect(extractRefTokenFromSessionCookie(raw)).toBe(
       '337922181t3127876176a2673726244x1778929730',
     );
+  });
+
+  it('accepts a track-only ref token (no a<album_id> segment)', () => {
+    const raw =
+      'session=1%09t%3A1%09r%3A%5B%228443f0t3127876176x1778929712%22%5D%09bp%3A1';
+    expect(extractRefTokenFromSessionCookie(raw)).toBe('8443f0t3127876176x1778929712');
+  });
+
+  it('skips search/misc tokens that have no t-segment', () => {
+    const raw =
+      'session=1%09t%3A1%09r%3A%5B%22526519257s0c0x1778929213%22%2C%2299t555a777x123%22%5D%09bp%3A1';
+    expect(extractRefTokenFromSessionCookie(raw)).toBe('99t555a777x123');
   });
 
   it('returns empty string when session cookie is missing', () => {
@@ -63,5 +75,12 @@ describe('extractRefTokenFromSessionCookie', () => {
 
   it('returns empty string when r:[] array is empty', () => {
     expect(extractRefTokenFromSessionCookie('session=1%09t%3A1%09r%3A%5B%5D%09bp%3A1')).toBe('');
+  });
+
+  it('picks the LAST session= when multiple Set-Cookie entries are joined', () => {
+    // Mirrors getSetCookie().join('; ') with an old session followed by a refresh.
+    const raw =
+      'identity=keep; session=1%09t%3A100%09r%3A%5B%22aaa1t1x1%22%5D; session=1%09t%3A200%09r%3A%5B%22bbb2t2x2%22%5D; Path=/';
+    expect(extractRefTokenFromSessionCookie(raw)).toBe('bbb2t2x2');
   });
 });

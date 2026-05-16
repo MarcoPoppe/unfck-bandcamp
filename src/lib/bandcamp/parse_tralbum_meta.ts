@@ -110,21 +110,38 @@ export function parseTralbumMeta(html: string): TralbumMeta {
  * session cookie with the new ref_token prepended to the r:[...] array.
  * Format (URL-decoded):
  *   1\tt:<created>\tr:["<token>","<older>","<older2>"]\tbp:1\tc:1
- * Where <token> matches \d+t\d+a\d+x\d+ (the ref_token we want).
+ * The tokens themselves come in two shapes depending on the page kind:
+ *   album page:  `<id>t<track_id>a<album_id>x<timestamp>`
+ *   track page:  `<id>t<track_id>x<timestamp>`            (no a-segment)
+ *   misc/search: `<id>s<sub>c<sub2>x<timestamp>`          (we ignore these)
  *
- * Returns the freshest ref_token or empty string when none is present.
+ * Returns the freshest tralbum ref_token (first match in the array order
+ * Bandcamp returns, which is newest-first) or empty string when none is
+ * present. Caller passes either the stored cookie OR the joined
+ * Set-Cookie header from a fresh tralbum response — the latter is what
+ * Bandcamp expects on cart-add (the ref_token must reference the just-
+ * viewed tralbum, otherwise the add comes back as resync:true).
  */
 export function extractRefTokenFromSessionCookie(rawCookie: string): string {
-  const sessionMatch = /session=([^;]+)/.exec(rawCookie);
-  if (!sessionMatch) return '';
-  const decoded = decodeURIComponent(sessionMatch[1]);
+  // The cookie can appear multiple times in a joined Set-Cookie blob, with
+  // the freshest value emitted last. We need the LAST `session=` entry.
+  let lastSession: string | null = null;
+  const sessionRe = /session=([^;,\s]+)/g;
+  for (let m = sessionRe.exec(rawCookie); m; m = sessionRe.exec(rawCookie)) {
+    lastSession = m[1];
+  }
+  if (!lastSession) return '';
+  const decoded = decodeURIComponent(lastSession);
   const refArrayMatch = /r:\[([^\]]+)\]/.exec(decoded);
   if (!refArrayMatch) return '';
   const tokens = refArrayMatch[1]
     .split(',')
     .map((t) => t.trim().replace(/^"|"$/g, ''));
+  // Accept any token whose body has a `t<digits>` segment — both album and
+  // track tokens carry one. Reject `s<digits>c<digits>` search/misc
+  // tokens.
   for (const t of tokens) {
-    if (/^\d+t\d+a\d+x\d+$/.test(t)) return t;
+    if (/^\w+t\d+(a\d+)?x\d+$/.test(t)) return t;
   }
   return '';
 }

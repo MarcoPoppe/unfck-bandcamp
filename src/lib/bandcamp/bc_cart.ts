@@ -14,8 +14,8 @@ export interface CartAddOpts {
   itemKey: string;
   /** Current size of the user's cart on Bandcamp; informational only. */
   cartLength?: number;
-  /** Incrementing counter used by Bandcamp's client. Off-by-N triggers a
-   * `resync: true` in the response, which the bulk adder ignores. */
+  /** Incrementing counter used by Bandcamp's client. Out-of-sync values
+   * trigger `resync: true` in the response and silently drop the add. */
   syncNum?: number;
   /**
    * Override the minimum price for PWYW items. The mirror always pays the
@@ -36,8 +36,49 @@ export interface CartAddResult {
 const CART_WIRE_TYPE = { t: 't', a: 'a' } as const;
 
 /**
+ * Reads every Set-Cookie header from the response. Node fetch's
+ * `headers.get('set-cookie')` collapses multiple cookies into one comma
+ * separated string that is no longer parseable; `getSetCookie()` is the
+ * correct API (Node 19+) and returns each cookie as its own entry.
+ */
+function readSetCookies(res: Response): string {
+  const maybe = res.headers as unknown as { getSetCookie?: () => string[] };
+  if (typeof maybe.getSetCookie === 'function') {
+    return maybe.getSetCookie().join('; ');
+  }
+  // Fallback for older runtimes that don't expose getSetCookie.
+  return res.headers.get('set-cookie') ?? '';
+}
+
+interface CartItemFromResponse {
+  item_id?: number;
+  item_type?: string;
+}
+
+interface CartDataFromResponse {
+  items?: CartItemFromResponse[];
+  cart_quantity?: number;
+}
+
+interface CartCbResponse {
+  resync?: boolean;
+  error?: unknown;
+  cart_data?: CartDataFromResponse;
+  cart_quantity?: number;
+}
+
+/**
  * Add a single item to the Bandcamp cart using main-auth. Caller is
  * responsible for throttling between calls (see cart_bulk_add.ts).
+ *
+ * Failure semantics for `resync: true`:
+ * Bandcamp returns HTTP 200 with `resync: true` when the client's
+ * `sync_num` or `ref_token` doesn't match the server's expectation. The
+ * frontend interprets this as "reset local cart to the server snapshot"
+ * — meaning the add was NOT persisted. We treat it as a failure and
+ * surface it so the bulk adder can react (e.g. abort on the first
+ * resync, since further attempts with the same stale parameters will
+ * keep getting rejected).
  */
 export async function addToBcCart(bcUrl: string, opts: CartAddOpts): Promise<CartAddResult> {
   const main = getStoredMainAuth();
@@ -70,17 +111,28 @@ export async function addToBcCart(bcUrl: string, opts: CartAddOpts): Promise<Car
     return { ok: false, error: err instanceof Error ? err.message : 'parse_failed' };
   }
 
-  const setCookieHeader =
-    res.headers.get('set-cookie') ??
-    (typeof (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie ===
-    'function'
-      ? ((res.headers as unknown as { getSetCookie: () => string[] }).getSetCookie() ?? []).join('; ')
-      : '');
-  const refToken = extractRefTokenFromSessionCookie(setCookieHeader || main.cookieString);
+  // Build the cookie string we send back: stored cookie ⊕ any session
+  // refresh Bandcamp emitted on the tralbum view. ref_token lives in the
+  // session cookie's r:[…] array; without it Bandcamp accepts the add
+  // request shape but silently drops it (resync: true).
+  const refreshedCookieString = readSetCookies(res);
+  const refToken = extractRefTokenFromSessionCookie(
+    refreshedCookieString || main.cookieString,
+  );
+  // Prefer the freshly-issued session cookie for the POST so Bandcamp
+  // accepts the ref_token we just read. Stored cookie remains the
+  // identity carrier (the new Set-Cookie usually only refreshes session).
+  const postCookieHeader = refreshedCookieString
+    ? `${main.cookieString}; ${refreshedCookieString}`
+    : main.cookieString;
+
+  if (!refToken) {
+    return { ok: false, error: 'ref_token_missing' };
+  }
 
   const unitPrice = Math.max(opts.unitPriceOverride ?? meta.minPrice, meta.minPrice);
   // Deterministic request id per (run, item): retrying the same item in the
-  // same run hits Bandcamp's dedup; a new run gets a fresh id.
+  // same run hits Bandcamp's dedup; a new run gets a fresh one.
   const reqId = createHash('sha1').update(`${opts.runId}:${opts.itemKey}`).digest('hex').slice(0, 16);
 
   const body = new URLSearchParams({
@@ -118,7 +170,7 @@ export async function addToBcCart(bcUrl: string, opts: CartAddOpts): Promise<Car
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       'X-Requested-With': 'XMLHttpRequest',
-      Cookie: main.cookieString,
+      Cookie: postCookieHeader,
       'User-Agent': BC_USER_AGENT,
       Accept: 'application/json, text/javascript, */*; q=0.01',
       Origin: `https://${canonicalHost}`,
@@ -135,11 +187,12 @@ export async function addToBcCart(bcUrl: string, opts: CartAddOpts): Promise<Car
   if (!r.ok) {
     return { ok: false, error: `bc_status_${r.status}` };
   }
-  let payload: { resync?: boolean; error?: unknown } = {};
+  let payload: CartCbResponse = {};
   try {
-    payload = (await r.json()) as { resync?: boolean; error?: unknown };
+    payload = (await r.json()) as CartCbResponse;
   } catch {
-    // Empty body is fine; we treat HTTP 2xx as success.
+    // Empty body — Bandcamp returns it sometimes for accepted adds.
+    return { ok: true };
   }
   if (payload.error) {
     return {
@@ -147,5 +200,16 @@ export async function addToBcCart(bcUrl: string, opts: CartAddOpts): Promise<Car
       error: typeof payload.error === 'string' ? payload.error : 'bc_error',
     };
   }
-  return { ok: true, resyncRequested: !!payload.resync };
+  if (payload.resync) {
+    // resync:true means the add was rejected because our sync_num /
+    // ref_token didn't satisfy Bandcamp. Continuing to push with the same
+    // stale values keeps getting rejected, so the bulk adder should treat
+    // this as a failure and (in the cleanest path) abort.
+    return {
+      ok: false,
+      error: 'bc_resync_rejected',
+      resyncRequested: true,
+    };
+  }
+  return { ok: true };
 }

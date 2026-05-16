@@ -40,16 +40,18 @@ async function fetchTralbumWithAuth(
   }
   const html = await res.text();
   const canonicalHost = new URL(res.url).host;
-  // Set-Cookie may not be exposed by Node fetch in every environment; we
-  // fall back to the input cookie if not. The mirror still works with the
-  // older ref_token because cart-add tolerates empty/stale tokens.
-  const setCookieHeader =
-    res.headers.get('set-cookie') ??
-    (typeof (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie ===
-    'function'
-      ? ((res.headers as unknown as { getSetCookie: () => string[] }).getSetCookie() ?? []).join('; ')
-      : '');
-  const refreshedCookie = setCookieHeader || cookieString;
+  // Node fetch's headers.get('set-cookie') folds multiple Set-Cookie lines
+  // into one comma-separated string that we can't reparse. getSetCookie()
+  // is the correct API (Node 19+) and returns each cookie as its own
+  // entry; we join them with '; ' so they read like a regular Cookie
+  // header. ref_token lives in the refreshed `session` cookie's r:[…]
+  // array — without it cart-add comes back with resync:true and the item
+  // is silently dropped.
+  const maybeHeaders = res.headers as unknown as { getSetCookie?: () => string[] };
+  const refreshedCookie =
+    typeof maybeHeaders.getSetCookie === 'function'
+      ? maybeHeaders.getSetCookie().join('; ')
+      : (res.headers.get('set-cookie') ?? cookieString);
   return { html, canonicalHost, refreshedCookie };
 }
 

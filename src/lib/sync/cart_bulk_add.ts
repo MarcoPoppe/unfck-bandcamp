@@ -89,6 +89,18 @@ export async function bulkAddToCart(input: BulkAddInput): Promise<BulkAddResult>
         items_synced: results.length,
       });
       return { runId, results };
+    } else if (first.error === 'bc_resync_rejected' || first.error === 'ref_token_missing') {
+      // Bandcamp dropped the add silently (sync_num/ref_token mismatch).
+      // Continuing with the same stale state keeps getting rejected, so
+      // abort the batch and surface the failure so the user can re-try
+      // after a manual refresh.
+      results.push({ key, status: 'failed', error: first.error });
+      markSyncRun(runId, {
+        status: 'error',
+        error_message: first.error,
+        items_synced: results.length,
+      });
+      return { runId, results };
     } else if (first.error === 'rate_limited') {
       await sleep(RATE_LIMIT_BACKOFF_MS);
       const second = await addToBcCart(item.bcUrl, {
