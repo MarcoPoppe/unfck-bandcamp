@@ -605,4 +605,63 @@ export const migrations: Migration[] = [
       ).run();
     },
   },
+  {
+    id: 22,
+    name: 'phase_aj_wishlist_polymorphic',
+    up: (db) => {
+      // Relax wishlist from track-only to polymorphic (track | album) and
+      // add a push-mirror state machine so the upcoming wishlist-sync
+      // worker can track local mutations through their bandcamp.com
+      // round-trip. SQLite can't drop a NOT NULL constraint in place, so
+      // we use the standard create-new / copy / drop-old / rename dance.
+      // Existing rows are seeded with mirror_state='local' so the next
+      // sync re-verifies them against the remote wishlist.
+      db.prepare(
+        `CREATE TABLE wishlist_new (
+           id INTEGER PRIMARY KEY AUTOINCREMENT,
+           bc_track_id INTEGER,
+           bc_album_id INTEGER,
+           bc_item_type TEXT NOT NULL DEFAULT 't' CHECK(bc_item_type IN ('t','a')),
+           bc_url TEXT NOT NULL,
+           title TEXT NOT NULL,
+           artist_name TEXT,
+           album_title TEXT,
+           cover_url TEXT,
+           status TEXT,
+           source TEXT,
+           added_at TEXT,
+           bought_at TEXT,
+           bought_via TEXT,
+           dismissed_at TEXT,
+           bc_synced_at TEXT,
+           mirror_state TEXT NOT NULL DEFAULT 'local'
+             CHECK(mirror_state IN ('local','pushing','synced','push_failed')),
+           mirror_error TEXT,
+           CHECK ((bc_item_type='t' AND bc_track_id IS NOT NULL)
+               OR (bc_item_type='a' AND bc_album_id IS NOT NULL))
+         )`,
+      ).run();
+      db.prepare(
+        `INSERT INTO wishlist_new
+           (id, bc_track_id, bc_url, title, artist_name, album_title, cover_url,
+            status, source, added_at, bought_at, bought_via, dismissed_at,
+            mirror_state)
+           SELECT id, bc_track_id, bc_url, title, artist_name, album_title,
+                  cover_url, status, source, added_at, bought_at, bought_via,
+                  dismissed_at, 'local'
+             FROM wishlist`,
+      ).run();
+      db.prepare('DROP TABLE wishlist').run();
+      db.prepare('ALTER TABLE wishlist_new RENAME TO wishlist').run();
+      db.prepare(
+        'CREATE UNIQUE INDEX idx_wishlist_track ON wishlist(bc_track_id) WHERE bc_track_id IS NOT NULL',
+      ).run();
+      db.prepare(
+        'CREATE UNIQUE INDEX idx_wishlist_album ON wishlist(bc_album_id) WHERE bc_album_id IS NOT NULL',
+      ).run();
+      db.prepare(
+        `CREATE INDEX idx_wishlist_mirror_state ON wishlist(mirror_state) WHERE mirror_state IN ('pushing','push_failed')`,
+      ).run();
+    },
+  },
 ];
