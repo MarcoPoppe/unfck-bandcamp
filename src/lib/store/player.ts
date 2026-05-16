@@ -13,13 +13,16 @@ export interface PlayerState {
    */
   playedBcTrackIds: Set<number>;
   /**
-   * Bandcamp track ids on the open wishlist. Mirrors the server state so
-   * the heart icon stays in sync across every list (Library, Discover,
-   * Best-of, the player bar) when the user clicks heart anywhere.
-   * Hydrated lazily by `hydrateWishlist()` and updated optimistically by
-   * mark/unmark actions.
+   * Wishlisted bandcamp items, keyed by `<itemType>:<itemId>` strings (e.g.
+   * `t:12345` for a track, `a:67890` for an album). Mirrors the server
+   * state so the heart icon stays in sync across every list (Library,
+   * Discover, Best-of, the player bar) when the user clicks heart anywhere.
+   * Polymorphic since the Phase 2 refactor: track-heart and album-heart
+   * coexist; `useIsWishlisted(type, id)` is the canonical read path.
+   * Hydrated lazily by AppShell on first mount; updated optimistically by
+   * add/remove actions.
    */
-  wishlistedBcTrackIds: Set<number>;
+  wishlistedItems: Set<string>;
   setQueue: (queue: TrackRowData[]) => void;
   toggle: (id: number) => void;
   setIsPlaying: (playing: boolean) => void;
@@ -57,12 +60,16 @@ export interface PlayerState {
    * album so the track-change effect picks it up and starts playback.
    */
   expandAlbum: (oldId: number, albumTracks: TrackRowData[]) => void;
-  /** Replace the entire wishlisted-bc-track-id set, e.g. on first hydrate. */
-  setWishlistedBcTrackIds: (ids: Iterable<number>) => void;
-  /** Add a single bcTrackId — called after a successful POST /api/wishlist. */
-  markOnWishlist: (bcTrackId: number) => void;
-  /** Remove a single bcTrackId — for unmark via PATCH (dismiss/reopen). */
-  markOffWishlist: (bcTrackId: number) => void;
+  /** Replace the entire wishlist set, e.g. on first hydrate. Keys are
+   * `<itemType>:<itemId>` strings; pass the formatted strings, not raw
+   * tuples, so the call site has to opt into the polymorphic key. */
+  setWishlistedItems: (keys: Iterable<string>) => void;
+  /** Add a single (type, id) — called after a successful POST /api/wishlist. */
+  markOnWishlist: (itemType: 't' | 'a', itemId: number) => void;
+  /** Remove a single (type, id) — for unmark via DELETE/PATCH dismiss. */
+  markOffWishlist: (itemType: 't' | 'a', itemId: number) => void;
+  /** Read helper for components that prefer a tuple over the raw set. */
+  isOnWishlist: (itemType: 't' | 'a', itemId: number) => boolean;
   /**
    * Live map of playlist memberships keyed by local tracks.id. Components
    * (badges on track rows) subscribe so adding or removing a track from a
@@ -132,7 +139,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentId: null,
   isPlaying: false,
   playedBcTrackIds: new Set<number>(),
-  wishlistedBcTrackIds: new Set<number>(),
+  wishlistedItems: new Set<string>(),
   setQueue: (queue) =>
     set((state) => {
       // Preserve the currently playing track when a page navigation
@@ -226,22 +233,25 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         state.currentId === oldId ? albumTracks[0].id : state.currentId;
       return { queue, currentId };
     }),
-  setWishlistedBcTrackIds: (ids) =>
-    set({ wishlistedBcTrackIds: new Set(ids) }),
-  markOnWishlist: (bcTrackId) =>
+  setWishlistedItems: (keys) =>
+    set({ wishlistedItems: new Set(keys) }),
+  markOnWishlist: (itemType, itemId) =>
     set((state) => {
-      if (state.wishlistedBcTrackIds.has(bcTrackId)) return state;
-      const next = new Set(state.wishlistedBcTrackIds);
-      next.add(bcTrackId);
-      return { wishlistedBcTrackIds: next };
+      const key = `${itemType}:${itemId}`;
+      if (state.wishlistedItems.has(key)) return state;
+      const next = new Set(state.wishlistedItems);
+      next.add(key);
+      return { wishlistedItems: next };
     }),
-  markOffWishlist: (bcTrackId) =>
+  markOffWishlist: (itemType, itemId) =>
     set((state) => {
-      if (!state.wishlistedBcTrackIds.has(bcTrackId)) return state;
-      const next = new Set(state.wishlistedBcTrackIds);
-      next.delete(bcTrackId);
-      return { wishlistedBcTrackIds: next };
+      const key = `${itemType}:${itemId}`;
+      if (!state.wishlistedItems.has(key)) return state;
+      const next = new Set(state.wishlistedItems);
+      next.delete(key);
+      return { wishlistedItems: next };
     }),
+  isOnWishlist: (itemType, itemId) => get().wishlistedItems.has(`${itemType}:${itemId}`),
   playlistMembershipByTrackId: new Map<number, { id: number; name: string }[]>(),
   setPlaylistMembershipMap: (map) =>
     set({ playlistMembershipByTrackId: new Map(map) }),

@@ -1,0 +1,47 @@
+# Album cart-add (Phase 0 Task 0.5)
+# Source: thomaspheckmann.bandcamp.com/album/drax-ltd-ii-amphetamine-the-complete-remixes
+# Captured 2026-05-16.
+# item_type wire format: "a" (SINGLE LETTER, asymmetric to wishlist's "album")
+# differs from track cart-add (item_type=t)? NO
+# Field-level diff from wishlist add: cart-add uses many more optional fields
+# (option_id, discount_id, sync_num, req_id, etc.) — see body comment below.
+
+curl 'https://thomaspheckmann.bandcamp.com/cart/cb' \
+  -H 'accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'accept-language: de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'origin: https://thomaspheckmann.bandcamp.com' \
+  -H 'referer: https://thomaspheckmann.bandcamp.com/album/drax-ltd-ii-amphetamine-the-complete-remixes' \
+  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw 'req=add&local_id=0.06072265416385003&item_type=a&item_id=2673726244&unit_price=20&quantity=1&option_id&discount_id&discount_type&download_type&download_id&purchase_note&notify_me&notify_me_label&band_id=2593437335&releases&ip_country_code=DE&associated_license_id&checkout_now&shipping_exception_mode&is_cardable=true&cart_length=4&fan_id=13539835&ref_token=337922181t3127876176a2673726244x1778929730&client_id&sync_num=6&req_id=0.8591267579622096'
+
+# Body fields:
+#   req            — "add" | "del" (see also: cart-add/no-ref-token.json for the "add" variant without ref_token)
+#   item_type      — "a" (album) | "t" (track)
+#   item_id        — bandcamp item id
+#   band_id        — bandcamp band id
+#   unit_price     — minimum or chosen NYP price
+#   quantity       — 1 for digital
+#   ip_country_code — 2-letter country code (we hardcode 'DE' as a stable default)
+#   is_cardable    — "true" if the item supports card checkout (most do)
+#   cart_length    — client-side count of items already in cart (informational)
+#   fan_id         — main-auth account fan_id
+#   ref_token      — OPTIONAL (Phase 0.2 confirmed). When omitted, Bandcamp accepts the add but signals `resync: true`.
+#   sync_num       — incrementing per-session counter; out-of-sync values trigger `resync: true` in response
+#   req_id         — random float, used by the JS client to correlate response to in-flight request
+#   local_id       — random float, client-internal id for the cart entry
+#   client_id      — usually empty in body (the real one rides in the `client_id` cookie)
+#   Other fields (option_id, discount_id, etc.) are required as keys but accept empty values for plain digital adds.
+#
+# Cart-DEL form (bonus, captured same session):
+#   req=del&id=384754414&client_id=&sync_num=7&req_id=0.6827206053986037
+#   `id` is the SERVER-assigned cart-line id (returned in the cart_data after a successful add),
+#   NOT the bandcamp item_id. We currently do not need DEL for the mirror, but it's documented
+#   here in case the user later wants to undo a bulk cart-add.

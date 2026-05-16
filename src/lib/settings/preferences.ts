@@ -5,6 +5,11 @@ import { useEffect, useState } from 'react';
 export interface Preferences {
   timeDisplay: 'elapsed' | 'remaining';
   mirrorFollowsToBandcamp: boolean;
+  /** When on, every local heart/unheart on the wishlist mirrors back to
+   * Bandcamp via main-auth. Default off so first-time users don't
+   * accidentally clobber their real wishlist before they understand the
+   * mirror semantics. */
+  mirrorWishlistToBandcamp: boolean;
   /** Global toggle to hide tracks the user has already heard. Filters at
    * the row-render level in every track list (Library, Discover, Curator,
    * Track-Permalink siblings + Best-of, Artist, Label, Wishlist).
@@ -23,6 +28,7 @@ export interface Preferences {
 export const DEFAULT_PREFERENCES: Preferences = {
   timeDisplay: 'elapsed',
   mirrorFollowsToBandcamp: false,
+  mirrorWishlistToBandcamp: false,
   hidePlayed: false,
   hidePartialAlbums: false,
   autoDetectBpm: true,

@@ -29,14 +29,17 @@ export default function WishlistPage() {
     ...listWishlist('bought'),
     ...listWishlist('dismissed'),
   ];
-  const playlistMap = getPlaylistMembershipForBcTrackIds(
-    allItems.map((i) => i.bcTrackId),
-  );
+  // Playlists are track-keyed; album wishlist items don't get a playlist
+  // annotation because the playlist tables don't model album membership.
+  const trackIds = allItems
+    .map((i) => i.bcTrackId)
+    .filter((id): id is number => id != null);
+  const playlistMap = getPlaylistMembershipForBcTrackIds(trackIds);
   const annotate = (items: ReturnType<typeof listWishlist>) =>
     items.map((i) => ({
       ...i,
-      hasBeenPlayed: played.has(i.bcTrackId),
-      playlists: playlistMap.get(i.bcTrackId) ?? [],
+      hasBeenPlayed: i.bcTrackId != null ? played.has(i.bcTrackId) : false,
+      playlists: i.bcTrackId != null ? (playlistMap.get(i.bcTrackId) ?? []) : [],
     }));
   return (
     <main className="mx-auto max-w-4xl px-4 pb-32 pt-8">

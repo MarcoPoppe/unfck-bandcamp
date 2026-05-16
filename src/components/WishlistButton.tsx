@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 import { usePlayerStore } from '@/lib/store/player';
+import { useIsWishlisted } from '@/lib/hooks/useIsWishlisted';
+import { loadPreferences } from '@/lib/settings/preferences';
 import Tooltip from './Tooltip';
 
 interface Props {
@@ -15,50 +17,31 @@ interface Props {
 }
 
 export default function WishlistButton(props: Props) {
-  // Live wishlist state lives in the player store so a heart filled in
-  // one place (e.g. the player bar) lights up everywhere this button is
-  // rendered for the same bcTrackId — without each instance fetching its
-  // own status. Falls back to the server-provided initialOnWishlist for
-  // the first paint before the store is hydrated.
-  const liveOnWishlist = usePlayerStore((s) =>
-    s.wishlistedBcTrackIds.has(props.bcTrackId),
-  );
+  const liveOnWishlist = useIsWishlisted('t', props.bcTrackId);
   const markOnWishlist = usePlayerStore((s) => s.markOnWishlist);
   const markOffWishlist = usePlayerStore((s) => s.markOffWishlist);
   const onWishlist = liveOnWishlist || (props.initialOnWishlist ?? false);
   const [busy, setBusy] = useState(false);
   // Bumped on every successful toggle to remount the heart + ring nodes
   // and re-trigger the CSS pop/ring animation. Tracking last-direction
-  // so we can suppress the radial ring on "off"-toggles (Twitter only
-  // bursts on-add, never on-remove).
+  // so we can suppress the radial ring on "off"-toggles.
   const [pulseKey, setPulseKey] = useState(0);
   const [pulseDir, setPulseDir] = useState<'on' | 'off' | null>(null);
 
   async function handleClick() {
     if (busy) return;
     setBusy(true);
+    const prefs = loadPreferences();
     try {
       if (onWishlist) {
-        // Toggle off: find the wishlist row id by bc_track_id and dismiss
-        // it. Dismiss flips status to 'dismissed' so the heart goes off
-        // everywhere via the live store. Same effect as multi-select →
-        // Dismiss on /wishlist, just one-click.
-        const list = await fetch('/api/wishlist?status=open').then(
-          (r) => r.json() as Promise<{ items?: { id: number; bcTrackId: number }[] }>,
-        );
-        const row = list.items?.find((i) => i.bcTrackId === props.bcTrackId);
-        if (!row) {
-          // Already off (race / bought / dismissed) — just sync local state.
-          markOffWishlist(props.bcTrackId);
-          return;
-        }
-        const res = await fetch('/api/wishlist', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ids: [row.id], action: 'dismiss' }),
+        const qs = new URLSearchParams({
+          itemType: 't',
+          bcTrackId: String(props.bcTrackId),
         });
+        if (prefs.mirrorWishlistToBandcamp) qs.set('mirrorToBandcamp', '1');
+        const res = await fetch(`/api/wishlist?${qs.toString()}`, { method: 'DELETE' });
         if (res.ok) {
-          markOffWishlist(props.bcTrackId);
+          markOffWishlist('t', props.bcTrackId);
           setPulseDir('off');
           setPulseKey((k) => k + 1);
         }
@@ -68,16 +51,18 @@ export default function WishlistButton(props: Props) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          itemType: 't',
           bcTrackId: props.bcTrackId,
           bcUrl: props.bcUrl,
           title: props.title,
           artistName: props.artistName,
           albumTitle: props.albumTitle,
           coverUrl: props.coverUrl,
+          mirrorToBandcamp: prefs.mirrorWishlistToBandcamp,
         }),
       });
       if (res.ok) {
-        markOnWishlist(props.bcTrackId);
+        markOnWishlist('t', props.bcTrackId);
         setPulseDir('on');
         setPulseKey((k) => k + 1);
       }
@@ -104,9 +89,6 @@ export default function WishlistButton(props: Props) {
             : 'text-fg-muted hover:bg-bg-hover hover:text-accent'
       }`}
     >
-      {/* Radial ring overlay. Only fires on the "on" toggle direction
-          and only when the user actually performed an action this
-          render — pulseKey > 0 keeps it idle on first paint. */}
       {pulseDir === 'on' && pulseKey > 0 && (
         <span
           key={`ring-${pulseKey}`}
@@ -115,8 +97,6 @@ export default function WishlistButton(props: Props) {
         />
       )}
       <svg
-        // The key remount restarts the pop animation on each click. Off
-        // toggles get a softer animation; on-toggles use the springy pop.
         key={`heart-${pulseKey}`}
         width="18"
         height="18"

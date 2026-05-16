@@ -1,0 +1,33 @@
+# Album wishlist collect (Phase 0 Task 0.4)
+# Source: thomaspheckmann.bandcamp.com/album/drax-ltd-ii-amphetamine-the-complete-remixes
+# Captured 2026-05-16.
+# item_type wire format: "album" (FULL WORD, not the single-letter "a" used in cart)
+# differs from track wishlist add (which uses item_type=track, also full word)? NO
+
+curl 'https://thomaspheckmann.bandcamp.com/collect_item_cb' \
+  -H 'accept: application/json, text/javascript, */*; q=0.01' \
+  -H 'accept-language: de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7' \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'origin: https://thomaspheckmann.bandcamp.com' \
+  -H 'referer: https://thomaspheckmann.bandcamp.com/album/drax-ltd-ii-amphetamine-the-complete-remixes' \
+  -H 'sec-ch-ua: "Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"' \
+  -H 'sec-ch-ua-mobile: ?0' \
+  -H 'sec-ch-ua-platform: "Windows"' \
+  -H 'sec-fetch-dest: empty' \
+  -H 'sec-fetch-mode: cors' \
+  -H 'sec-fetch-site: same-origin' \
+  -H 'user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36' \
+  -H 'x-requested-with: XMLHttpRequest' \
+  --data-raw 'fan_id=13539835&item_id=2673726244&item_type=album&band_id=2593437335&ref_token=337922181t3127876176a2673726244x1778929730&crumb=%7Ccollect_item_cb%7C1778931530%7Cnk%2FgPTYw%2BEhjeSsOJBOrTW8BCNc%3D'
+
+# Body fields (all required as form-encoded):
+#   fan_id        — main-auth account fan_id
+#   item_id       — bandcamp item id (here: 2673726244)
+#   item_type     — "album" (or "track" for tracks)
+#   band_id       — bandcamp band id (here: 2593437335)
+#   ref_token     — session-tracker token: <some_id>t<track_id>a<album_id>x<timestamp>
+#                   (the wishlist write *does* require this; cart-add does not)
+#   crumb         — |<endpoint_name>|<unix_ts>|<base64_HMAC>
+#                   parsed from the tralbum page's `crumbs` JSON.
+
+# Response: {"ok": true, ...} on success.

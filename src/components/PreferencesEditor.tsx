@@ -137,6 +137,32 @@ export default function PreferencesEditor() {
 
         <div className="flex items-start justify-between gap-3 rounded border border-border bg-bg-base p-3">
           <div className="min-w-0">
+            <div className="text-sm font-medium">Mirror wishlist actions to Bandcamp</div>
+            <div className="text-xs text-fg-muted">
+              When you heart or unheart an item here, also mirror it to your
+              bandcamp.com wishlist via your stored cookies. Off by default to
+              avoid accidentally clobbering your real wishlist. The pull-sync
+              button on the Wishlist page works either way.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => update({ mirrorWishlistToBandcamp: !prefs.mirrorWishlistToBandcamp })}
+            aria-pressed={prefs.mirrorWishlistToBandcamp}
+            className={`relative inline-flex h-6 w-11 flex-none items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              prefs.mirrorWishlistToBandcamp ? 'bg-accent' : 'bg-bg-elevated'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-fg-on-accent transition-transform ${
+                prefs.mirrorWishlistToBandcamp ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-start justify-between gap-3 rounded border border-border bg-bg-base p-3">
+          <div className="min-w-0">
             <div className="text-sm font-medium">Auto-detect BPM</div>
             <div className="text-xs text-fg-muted">
               Detects tempo automatically a few seconds after a track starts.

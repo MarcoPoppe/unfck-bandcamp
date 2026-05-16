@@ -39,7 +39,7 @@ export default function AppShell({
   const [libOpen, setLibOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const libRef = useRef<HTMLDivElement | null>(null);
-  const setWishlistedBcTrackIds = usePlayerStore((s) => s.setWishlistedBcTrackIds);
+  const setWishlistedItems = usePlayerStore((s) => s.setWishlistedItems);
   const setPlayedBcTrackIds = usePlayerStore((s) => s.setPlayedBcTrackIds);
   const setPlaylistMembershipMap = usePlayerStore((s) => s.setPlaylistMembershipMap);
   // Avatar URL of the BC profile we crawl. Cached in localStorage for 6h
@@ -100,16 +100,28 @@ export default function AppShell({
   useEffect(() => {
     let cancelled = false;
     void fetch('/api/wishlist?status=open')
-      .then((r) => r.json() as Promise<{ ok?: boolean; items?: { bcTrackId: number }[] }>)
+      .then(
+        (r) =>
+          r.json() as Promise<{
+            ok?: boolean;
+            items?: { bcItemType: 't' | 'a'; bcTrackId?: number; bcAlbumId?: number }[];
+          }>,
+      )
       .then((j) => {
         if (cancelled || !j.ok || !j.items) return;
-        setWishlistedBcTrackIds(j.items.map((i) => i.bcTrackId));
+        const keys = j.items
+          .map((i) => {
+            const id = i.bcItemType === 't' ? i.bcTrackId : i.bcAlbumId;
+            return id ? `${i.bcItemType}:${id}` : null;
+          })
+          .filter((k): k is string => k !== null);
+        setWishlistedItems(keys);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [setWishlistedBcTrackIds]);
+  }, [setWishlistedItems]);
 
   // Hydrate the live played-set so green checks stay correct after a
   // soft navigation (e.g. clicking a track title and back). Without
