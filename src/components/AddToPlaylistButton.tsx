@@ -62,10 +62,14 @@ export default function AddToPlaylistButton({ trackId, initiallyOpen = false }: 
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
 
-  // initiallyOpen: load options and compute flip direction on first mount
-  // so the Lazy* wrappers don't need a second click after they resolve.
+  // When `open` flips on (toggleOpen or initiallyOpen), compute flip
+  // direction and fetch the playlist list. Doing this in an effect keeps
+  // toggleOpen a pure state update — the previous impure updater pattern
+  // (side effects inside setOpen's updater function) lost the open=true
+  // commit intermittently because React 18 may re-invoke updaters and the
+  // setState calls inside collided with the outer setOpen.
   useEffect(() => {
-    if (!initiallyOpen) return;
+    if (!open) return;
     if (ref.current) {
       const rect = ref.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
@@ -73,7 +77,7 @@ export default function AddToPlaylistButton({ trackId, initiallyOpen = false }: 
     }
     void loadOptions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [open]);
 
   async function loadOptions() {
     setLoading(true);
@@ -91,22 +95,7 @@ export default function AddToPlaylistButton({ trackId, initiallyOpen = false }: 
   }
 
   function toggleOpen() {
-    setOpen((prev) => {
-      const next = !prev;
-      if (next) {
-        // Decide flip direction based on space below the trigger. The
-        // sticky player bar is fixed at the bottom (~88px tall), so rows
-        // within ~360px of the viewport bottom reliably get clipped if we
-        // open downward. Flip upward in that case.
-        if (ref.current) {
-          const rect = ref.current.getBoundingClientRect();
-          const spaceBelow = window.innerHeight - rect.bottom;
-          setOpenUpward(spaceBelow < 360);
-        }
-        void loadOptions();
-      }
-      return next;
-    });
+    setOpen((prev) => !prev);
   }
 
   async function toggleMembership(p: PlaylistOption) {
