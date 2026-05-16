@@ -2,23 +2,32 @@ import { getDb } from '../db';
 
 export type WishlistStatus = 'open' | 'bought' | 'dismissed';
 export type WishlistSource = 'discovery' | 'manual';
+export type BcItemType = 't' | 'a';
+export type WishlistMirrorState = 'local' | 'pushing' | 'synced' | 'push_failed';
 
 export interface WishlistItem {
   id: number;
-  bcTrackId: number;
+  bcItemType: BcItemType;
+  bcTrackId?: number;
+  bcAlbumId?: number;
   bcUrl: string;
   title: string;
-  artistName: string | null;
-  albumTitle: string | null;
-  coverUrl: string | null;
-  status: WishlistStatus;
-  source: WishlistSource;
-  addedAt: string;
-  boughtAt: string | null;
-  boughtVia: 'manual' | 'auto' | null;
-  dismissedAt: string | null;
-  localTrackId: number | null;
-  hasStream: boolean;
+  artistName?: string | null;
+  albumTitle?: string | null;
+  coverUrl?: string | null;
+  status?: string | null;
+  source?: string | null;
+  addedAt?: string;
+  boughtAt?: string | null;
+  boughtVia?: string | null;
+  dismissedAt?: string | null;
+  bcSyncedAt?: string | null;
+  mirrorState: WishlistMirrorState;
+  mirrorError?: string | null;
+  // Annotations added by list-query JOINs (not stored on the wishlist row
+  // itself). Optional so single-row reads don't have to provide them.
+  localTrackId?: number | null;
+  hasStream?: boolean;
   hasBeenPlayed?: boolean;
   /** Playlists this track sits in. Annotated by the page loader, not stored
    * on the wishlist row itself. Empty array when the track is in no
@@ -28,18 +37,23 @@ export interface WishlistItem {
 
 interface WishlistRow {
   id: number;
-  bc_track_id: number;
+  bc_track_id: number | null;
+  bc_album_id: number | null;
+  bc_item_type: BcItemType;
   bc_url: string;
   title: string;
   artist_name: string | null;
   album_title: string | null;
   cover_url: string | null;
-  status: WishlistStatus;
-  source: WishlistSource;
-  added_at: string;
+  status: WishlistStatus | null;
+  source: WishlistSource | null;
+  added_at: string | null;
   bought_at: string | null;
   bought_via: 'manual' | 'auto' | null;
   dismissed_at: string | null;
+  bc_synced_at: string | null;
+  mirror_state: WishlistMirrorState;
+  mirror_error: string | null;
   local_track_id: number | null;
   local_stream_url: string | null;
 }
@@ -47,7 +61,9 @@ interface WishlistRow {
 function fromRow(r: WishlistRow): WishlistItem {
   return {
     id: r.id,
-    bcTrackId: r.bc_track_id,
+    bcItemType: r.bc_item_type,
+    bcTrackId: r.bc_track_id ?? undefined,
+    bcAlbumId: r.bc_album_id ?? undefined,
     bcUrl: r.bc_url,
     title: r.title,
     artistName: r.artist_name,
@@ -55,64 +71,124 @@ function fromRow(r: WishlistRow): WishlistItem {
     coverUrl: r.cover_url,
     status: r.status,
     source: r.source,
-    addedAt: r.added_at,
+    addedAt: r.added_at ?? undefined,
     boughtAt: r.bought_at,
     boughtVia: r.bought_via,
     dismissedAt: r.dismissed_at,
+    bcSyncedAt: r.bc_synced_at,
+    mirrorState: r.mirror_state,
+    mirrorError: r.mirror_error,
     localTrackId: r.local_track_id,
     hasStream: !!r.local_stream_url,
   };
 }
 
-export interface AddToWishlistInput {
-  bcTrackId: number;
-  bcUrl: string;
-  title: string;
-  artistName?: string | null;
-  albumTitle?: string | null;
-  coverUrl?: string | null;
-  source?: WishlistSource;
-}
-
-export function addToWishlist(input: AddToWishlistInput): { id: number; created: boolean } {
-  const db = getDb();
-  const existing = db
-    .prepare<[number], { id: number; status: WishlistStatus }>(
-      'SELECT id, status FROM wishlist WHERE bc_track_id = ?',
-    )
-    .get(input.bcTrackId);
-  if (existing) {
-    if (existing.status !== 'open') {
-      // Reopen wipes the terminal-state bookkeeping fully (Codex pass-1 A2):
-      // a track that was previously 'bought' or 'dismissed' must not retain
-      // stale bought_at/bought_via/dismissed_at after the user re-adds it.
-      db.prepare(
-        `UPDATE wishlist
-           SET status = 'open',
-               bought_at = NULL,
-               bought_via = NULL,
-               dismissed_at = NULL
-           WHERE id = ?`,
-      ).run(existing.id);
+type AddInput =
+  | {
+      bcItemType: 't';
+      bcTrackId: number;
+      bcAlbumId?: never;
+      bcUrl: string;
+      title: string;
+      artistName?: string | null;
+      albumTitle?: string | null;
+      coverUrl?: string | null;
+      source?: string | null;
     }
-    return { id: existing.id, created: false };
+  | {
+      bcItemType: 'a';
+      bcAlbumId: number;
+      bcTrackId?: never;
+      bcUrl: string;
+      title: string;
+      artistName?: string | null;
+      albumTitle?: string | null;
+      coverUrl?: string | null;
+      source?: string | null;
+    };
+
+export function addToWishlist(input: AddInput): number {
+  if (input.bcItemType === 't' && (!('bcTrackId' in input) || input.bcTrackId == null)) {
+    throw new Error('addToWishlist: bcTrackId required for itemType=t');
   }
-  const info = db
+  if (input.bcItemType === 'a' && (!('bcAlbumId' in input) || input.bcAlbumId == null)) {
+    throw new Error('addToWishlist: bcAlbumId required for itemType=a');
+  }
+  // Runtime XOR: reject if BOTH ids passed (caller bypassed TypeScript union)
+  if (
+    'bcTrackId' in input &&
+    'bcAlbumId' in input &&
+    (input as { bcTrackId?: number }).bcTrackId != null &&
+    (input as { bcAlbumId?: number }).bcAlbumId != null
+  ) {
+    throw new Error('addToWishlist: cannot set both bcTrackId and bcAlbumId');
+  }
+  const info = getDb()
     .prepare(
-      `INSERT INTO wishlist (
-         bc_track_id, bc_url, title, artist_name, album_title, cover_url, source
-       ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `
+      INSERT INTO wishlist
+        (bc_item_type, bc_track_id, bc_album_id, bc_url, title, artist_name, album_title, cover_url, source, added_at, mirror_state)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), 'local')
+    `,
     )
     .run(
-      input.bcTrackId,
+      input.bcItemType,
+      input.bcItemType === 't' ? input.bcTrackId : null,
+      input.bcItemType === 'a' ? input.bcAlbumId : null,
       input.bcUrl,
       input.title,
       input.artistName ?? null,
       input.albumTitle ?? null,
       input.coverUrl ?? null,
-      input.source ?? 'discovery',
+      input.source ?? 'local',
     );
-  return { id: Number(info.lastInsertRowid), created: true };
+  return Number(info.lastInsertRowid);
+}
+
+export function removeFromWishlist(itemType: BcItemType, itemId: number): boolean {
+  const sql =
+    itemType === 't'
+      ? 'DELETE FROM wishlist WHERE bc_track_id = ?'
+      : 'DELETE FROM wishlist WHERE bc_album_id = ?';
+  const info = getDb().prepare(sql).run(itemId);
+  return info.changes > 0;
+}
+
+export function reopenWishlistItem(itemType: BcItemType, itemId: number): void {
+  const sql =
+    itemType === 't'
+      ? `UPDATE wishlist SET dismissed_at=NULL, bought_at=NULL, bought_via=NULL, bc_synced_at=NULL, mirror_state='local' WHERE bc_track_id = ?`
+      : `UPDATE wishlist SET dismissed_at=NULL, bought_at=NULL, bought_via=NULL, bc_synced_at=NULL, mirror_state='local' WHERE bc_album_id = ?`;
+  getDb().prepare(sql).run(itemId);
+}
+
+export function isOwned(itemType: BcItemType, itemId: number): boolean {
+  const row = getDb()
+    .prepare(
+      `
+      SELECT 1 AS hit FROM collection_items
+      WHERE bc_item_type = ? AND bc_item_id = ? AND removed_at IS NULL
+    `,
+    )
+    .get(itemType, itemId);
+  return row != null;
+}
+
+export function setMirrorState(
+  itemType: BcItemType,
+  itemId: number,
+  state: WishlistMirrorState,
+  error?: string | null,
+): void {
+  const where = itemType === 't' ? 'bc_track_id = ?' : 'bc_album_id = ?';
+  getDb()
+    .prepare(`UPDATE wishlist SET mirror_state = ?, mirror_error = ? WHERE ${where}`)
+    .run(state, error ?? null, itemId);
+}
+
+export function setBcSyncedAt(itemType: BcItemType, itemId: number, at: string): void {
+  const where = itemType === 't' ? 'bc_track_id = ?' : 'bc_album_id = ?';
+  getDb().prepare(`UPDATE wishlist SET bc_synced_at = ? WHERE ${where}`).run(at, itemId);
 }
 
 export function listWishlist(status?: WishlistStatus): WishlistItem[] {
@@ -120,9 +196,10 @@ export function listWishlist(status?: WishlistStatus): WishlistItem[] {
   const rows = status
     ? db
         .prepare<[WishlistStatus], WishlistRow>(
-          `SELECT w.id, w.bc_track_id, w.bc_url, w.title, w.artist_name, w.album_title,
-                  w.cover_url, w.status, w.source, w.added_at, w.bought_at, w.bought_via,
-                  w.dismissed_at,
+          `SELECT w.id, w.bc_track_id, w.bc_album_id, w.bc_item_type, w.bc_url, w.title,
+                  w.artist_name, w.album_title, w.cover_url, w.status, w.source,
+                  w.added_at, w.bought_at, w.bought_via, w.dismissed_at,
+                  w.bc_synced_at, w.mirror_state, w.mirror_error,
                   t.id AS local_track_id, t.stream_url AS local_stream_url
              FROM wishlist w
              LEFT JOIN tracks t
@@ -133,9 +210,10 @@ export function listWishlist(status?: WishlistStatus): WishlistItem[] {
         .all(status)
     : db
         .prepare<[], WishlistRow>(
-          `SELECT w.id, w.bc_track_id, w.bc_url, w.title, w.artist_name, w.album_title,
-                  w.cover_url, w.status, w.source, w.added_at, w.bought_at, w.bought_via,
-                  w.dismissed_at,
+          `SELECT w.id, w.bc_track_id, w.bc_album_id, w.bc_item_type, w.bc_url, w.title,
+                  w.artist_name, w.album_title, w.cover_url, w.status, w.source,
+                  w.added_at, w.bought_at, w.bought_via, w.dismissed_at,
+                  w.bc_synced_at, w.mirror_state, w.mirror_error,
                   t.id AS local_track_id, t.stream_url AS local_stream_url
              FROM wishlist w
              LEFT JOIN tracks t
