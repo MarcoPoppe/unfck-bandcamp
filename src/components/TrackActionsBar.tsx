@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import CurationButtons from './CurationButtons';
 import WishlistButton from './WishlistButton';
 import AddToPlaylistButton from './AddToPlaylistButton';
@@ -43,6 +43,15 @@ export default function TrackActionsBar(props: Props) {
   const [localTrackId, setLocalTrackId] = useState<number | null>(props.localTrackId);
   const [resolving, setResolving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Adopt the real track id when the parent learns it later. Curator rows
+  // mount with a synthetic negative id (props.localTrackId === null), and
+  // playing the track imports it — the parent then passes the real id down.
+  // Without this sync the row stays stuck on the lazy stub (and re-runs a
+  // lookup on every action) instead of switching to the direct buttons.
+  useEffect(() => {
+    if (props.localTrackId != null) setLocalTrackId(props.localTrackId);
+  }, [props.localTrackId]);
   // True when the most recent resolve was triggered by clicking the
   // playlist stub, so the freshly-mounted AddToPlaylistButton opens its
   // dropdown without a second click. Cleared on the next user action.
@@ -59,16 +68,29 @@ export default function TrackActionsBar(props: Props) {
       // bcUrl resolves more reliably than the numeric BC track-id (which
       // goes through Bandcamp's mobile tralbum_details endpoint and 404s on
       // some tracks). Fall back to id only when no URL is known.
-      const res = await fetch('/api/track/lookup', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input:
-            props.bcUrl && props.bcUrl.length > 0
-              ? props.bcUrl
-              : String(props.bcTrackId ?? ''),
-        }),
-      });
+      // Time out like the player's lazy-resolve does: an un-imported curator
+      // track needs a Bandcamp roundtrip to import, and under CDN throttling
+      // that can crawl for a minute. Without a timeout the click just sits
+      // there with no feedback ("nothing happens"); with it we surface a
+      // clear message so the user can retry instead of staring at a dead row.
+      const ac = new AbortController();
+      const timer = window.setTimeout(() => ac.abort(), 15_000);
+      let res: Response;
+      try {
+        res = await fetch('/api/track/lookup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input:
+              props.bcUrl && props.bcUrl.length > 0
+                ? props.bcUrl
+                : String(props.bcTrackId ?? ''),
+          }),
+          signal: ac.signal,
+        });
+      } finally {
+        window.clearTimeout(timer);
+      }
       const json = (await res.json()) as {
         ok?: boolean;
         result?: { trackId: number };
@@ -82,7 +104,11 @@ export default function TrackActionsBar(props: Props) {
       setLocalTrackId(json.result.trackId);
       return json.result.trackId;
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lookup failed');
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        setError('Import timed out (Bandcamp slow) — tap again to retry');
+      } else {
+        setError(err instanceof Error ? err.message : 'Lookup failed');
+      }
       return null;
     } finally {
       setResolving(false);
@@ -190,22 +216,29 @@ function LazyPlaylistStub({
       type="button"
       onClick={onResolve}
       disabled={resolving}
-      title="Manage playlists (imports the track first)"
+      title={resolving ? 'Importing track…' : 'Manage playlists (imports the track first)'}
       aria-label="Manage playlists"
       className="flex h-9 w-9 items-center justify-center rounded text-fg-muted transition-colors hover:bg-bg-hover hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:opacity-50"
     >
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-        <path
-          d="M9 17V5l10-2v12"
-          stroke="currentColor"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        <circle cx="6" cy="17" r="3" />
-        <circle cx="16" cy="15" r="3" />
-      </svg>
+      {resolving ? (
+        <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" opacity="0.25" />
+          <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+          <path
+            d="M9 17V5l10-2v12"
+            stroke="currentColor"
+            strokeWidth="2"
+            fill="none"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="6" cy="17" r="3" />
+          <circle cx="16" cy="15" r="3" />
+        </svg>
+      )}
     </button>
   );
 }

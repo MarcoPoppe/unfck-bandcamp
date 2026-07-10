@@ -266,9 +266,15 @@ export function beginProgressiveStream(
  * audio file as `<key>.peaks.json`. Handing these to WaveSurfer lets it skip
  * its blocking full-file fetch, so playback can start progressively. */
 export interface CachedPeaks {
+  v?: number;
   peaks: number[][];
   duration: number;
 }
+
+// Bumped whenever the peak-extraction algorithm changes, so caches written by
+// an older algorithm are ignored and recomputed on next play. v2 = per-bucket
+// RMS (v1 was peak/max-abs, which read as a flat "sausage" on loud tracks).
+const PEAKS_VERSION = 2;
 
 function getPeaksPath(cacheKey: string): string {
   return join(getCacheDir(), `${sanitizeKey(cacheKey)}.peaks.json`);
@@ -279,9 +285,10 @@ export function getCachedPeaks(cacheKey: string): CachedPeaks | null {
   if (!existsSync(p)) return null;
   try {
     const parsed = JSON.parse(readFileSync(p, 'utf8')) as CachedPeaks;
+    if (parsed.v !== PEAKS_VERSION) return null; // stale algorithm — recompute
     if (!Array.isArray(parsed.peaks) || parsed.peaks.length === 0) return null;
     if (typeof parsed.duration !== 'number' || !Number.isFinite(parsed.duration)) return null;
-    return parsed;
+    return { peaks: parsed.peaks, duration: parsed.duration };
   } catch {
     return null;
   }
@@ -289,7 +296,10 @@ export function getCachedPeaks(cacheKey: string): CachedPeaks | null {
 
 export function setCachedPeaks(cacheKey: string, data: CachedPeaks): void {
   try {
-    writeFileSync(getPeaksPath(cacheKey), JSON.stringify(data));
+    writeFileSync(
+      getPeaksPath(cacheKey),
+      JSON.stringify({ v: PEAKS_VERSION, peaks: data.peaks, duration: data.duration }),
+    );
   } catch {
     // Best-effort: a failed peak-cache write just means we recompute next time.
   }

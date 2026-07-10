@@ -46,7 +46,7 @@ describe('peak cache', () => {
   it('rejects a file with a non-finite duration', () => {
     writeFileSync(
       join(cacheDir, 'track_baddur.peaks.json'),
-      JSON.stringify({ peaks: [[0.1]], duration: null }),
+      JSON.stringify({ v: 2, peaks: [[0.1]], duration: null }),
     );
     expect(mod.getCachedPeaks('track_baddur')).toBeNull();
   });
@@ -54,9 +54,19 @@ describe('peak cache', () => {
   it('rejects a file with empty peaks', () => {
     writeFileSync(
       join(cacheDir, 'track_nopeaks.peaks.json'),
-      JSON.stringify({ peaks: [], duration: 10 }),
+      JSON.stringify({ v: 2, peaks: [], duration: 10 }),
     );
     expect(mod.getCachedPeaks('track_nopeaks')).toBeNull();
+  });
+
+  it('rejects peaks written by a stale algorithm version', () => {
+    // v1 was peak/max-abs; the current algorithm is RMS (v2). Old caches must
+    // be ignored so the waveform gets recomputed instead of staying flat.
+    writeFileSync(
+      join(cacheDir, 'track_stale.peaks.json'),
+      JSON.stringify({ v: 1, peaks: [[0.1, 0.2]], duration: 10 }),
+    );
+    expect(mod.getCachedPeaks('track_stale')).toBeNull();
   });
 
   it('rejects an unsafe cache key', () => {
