@@ -20,6 +20,44 @@ function formatTime(seconds: number, sign: '' | '-' = ''): string {
   return `${sign}${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// Low-amplitude placeholder waveform shown while a never-before-heard track
+// streams progressively for the first time. The gentle variation avoids a
+// normalize divide-by-zero and reads as "loading" rather than a real
+// waveform; backfillPeaks() replaces it with the decoded peaks once cached.
+const PLACEHOLDER_PEAKS: number[][] = [
+  Array.from({ length: 400 }, (_, i) => 0.12 + 0.06 * Math.sin(i / 5)),
+];
+
+function peaksUrlFor(track: TrackRowData): string {
+  return track.source === 'discovered'
+    ? `/api/audio/peaks?id=${track.id}&source=discovered`
+    : `/api/audio/peaks?id=${track.id}`;
+}
+
+// Extract normalized peak samples from a decoded AudioBuffer, mirroring
+// WaveSurfer.exportPeaks (per-bucket max abs) but small enough to cache and
+// re-feed as channelData.
+function extractPeaks(buf: AudioBuffer, maxLength: number): number[][] {
+  const channels = Math.min(buf.numberOfChannels, 2);
+  const out: number[][] = [];
+  for (let c = 0; c < channels; c += 1) {
+    const chan = buf.getChannelData(c);
+    const bucket = chan.length / maxLength;
+    const data: number[] = new Array(maxLength);
+    for (let i = 0; i < maxLength; i += 1) {
+      const start = Math.floor(i * bucket);
+      const end = Math.min(Math.ceil((i + 1) * bucket), chan.length);
+      let max = 0;
+      for (let j = start; j < end; j += 1) {
+        if (Math.abs(chan[j]) > Math.abs(max)) max = chan[j];
+      }
+      data[i] = Math.round(max * 10000) / 10000;
+    }
+    out[c] = data;
+  }
+  return out;
+}
+
 export default function StickyPlayerBar() {
   const queue = usePlayerStore((s) => s.queue);
   const currentId = usePlayerStore((s) => s.currentId);
@@ -518,17 +556,11 @@ export default function StickyPlayerBar() {
     decodingRef.current = true;
     setDecoding(true);
     const token = requestTokenRef.current;
-    ws.load(src).catch((err: unknown) => {
-      if (token !== requestTokenRef.current) return;
-      decodingRef.current = false;
-      setError(err instanceof Error ? err.message : 'load failed');
-      setDecoding(false);
-      void diagnoseStreamForCurrent().then((msg) => {
-        if (token !== requestTokenRef.current) return;
-        if (msg) setError(msg);
-      });
-      scheduleAutoSkip(token);
-    });
+    if (prefs.progressivePlayback) {
+      void loadProgressive(ws, src, current, token);
+    } else {
+      loadClassic(ws, src, token);
+    }
     // Soft watchdog: if onReady doesn't fire within 30s, surface a
     // warning so the user knows the track is stalling on BC's side.
     // We do NOT auto-skip — Marco's observation was that the track does
@@ -541,7 +573,7 @@ export default function StickyPlayerBar() {
       if (!decodingRef.current) return;
       setError('Loading takes longer than usual — press D to skip');
     }, 30_000);
-  }, [current, replaceTrack, expandAlbum, advance]);
+  }, [current, replaceTrack, expandAlbum, advance, prefs.progressivePlayback]);
 
   // Schedule a single auto-skip for the given track-load token. Idempotent
   // per token (multiple error sources for the same load only advance once)
@@ -553,6 +585,132 @@ export default function StickyPlayerBar() {
       if (token !== requestTokenRef.current) return;
       if (wsRef.current && !wsRef.current.isPlaying()) advance();
     }, 1500);
+  }
+
+  // Shared load-failure handling: mark the load done, surface the raw error,
+  // upgrade it with an HTTP-status-tuned message, and schedule one auto-skip.
+  // Used by both the classic and progressive load paths.
+  function handleLoadFailure(err: unknown, token: number) {
+    if (token !== requestTokenRef.current) return;
+    decodingRef.current = false;
+    setError(err instanceof Error ? err.message : 'load failed');
+    setDecoding(false);
+    void diagnoseStreamForCurrent().then((msg) => {
+      if (token !== requestTokenRef.current) return;
+      if (msg) setError(msg);
+    });
+    scheduleAutoSkip(token);
+  }
+
+  // Classic path: WaveSurfer fetches the whole MP3 as a blob before the audio
+  // element gets a source, then decodes for the waveform. Correct but blocking
+  // — under CDN throttling this is the 20-50s stall. Kept as the off-switch
+  // fallback (prefs.progressivePlayback === false) and as the range/seek path.
+  function loadClassic(ws: WaveSurfer, src: string, token: number) {
+    ws.load(src).catch((err: unknown) => handleLoadFailure(err, token));
+  }
+
+  // Progressive path: hand WaveSurfer pre-computed peaks so it skips its
+  // blocking full-file fetch and sets media.src directly — the <audio> element
+  // then streams the progressive route and starts in ~1-2s. Cached peaks give
+  // the real waveform immediately; a never-heard track gets a placeholder and
+  // its real peaks are decoded + cached in the background (backfillPeaks).
+  async function loadProgressive(
+    ws: WaveSurfer,
+    src: string,
+    track: TrackRowData,
+    token: number,
+  ) {
+    let channelData: number[][] | null = null;
+    let peakDuration =
+      track.durationSeconds != null && track.durationSeconds > 0
+        ? track.durationSeconds
+        : undefined;
+    try {
+      const res = await fetch(peaksUrlFor(track));
+      if (res.ok) {
+        const json = (await res.json()) as {
+          ok?: boolean;
+          peaks?: number[][];
+          duration?: number;
+        };
+        if (json.ok && Array.isArray(json.peaks) && json.peaks.length > 0) {
+          channelData = json.peaks;
+          if (typeof json.duration === 'number' && json.duration > 0) {
+            peakDuration = json.duration;
+          }
+        }
+      }
+    } catch {
+      // No cached peaks reachable — fall through to the placeholder.
+    }
+    if (token !== requestTokenRef.current) return;
+
+    const usingPlaceholder = channelData == null;
+    try {
+      await ws.load(src, channelData ?? PLACEHOLDER_PEAKS, peakDuration);
+    } catch (err) {
+      // A genuine media error (e.g. 502) routes through ws.on('error') which
+      // already surfaces the message + auto-skip; only handle a load() that
+      // rejects outright here.
+      handleLoadFailure(err, token);
+      return;
+    }
+    if (usingPlaceholder && token === requestTokenRef.current) {
+      void backfillPeaks(ws, src, track, token);
+    }
+  }
+
+  // Background: fetch the now-caching file (single-flight on the server means
+  // this reads from disk / awaits the in-flight download — no second Bandcamp
+  // connection), decode it locally for real peaks, cache them for next time,
+  // and swap the placeholder waveform for the real one without disrupting
+  // playback. All best-effort: any failure just leaves the placeholder.
+  async function backfillPeaks(
+    ws: WaveSurfer,
+    src: string,
+    track: TrackRowData,
+    token: number,
+  ) {
+    try {
+      const res = await fetch(src);
+      if (!res.ok || token !== requestTokenRef.current) return;
+      const arrayBuf = await res.arrayBuffer();
+      if (token !== requestTokenRef.current) return;
+      const Ctx =
+        window.AudioContext ??
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      let decoded: AudioBuffer;
+      try {
+        decoded = await ctx.decodeAudioData(arrayBuf);
+      } finally {
+        void ctx.close();
+      }
+      if (token !== requestTokenRef.current) return;
+      const peaks = extractPeaks(decoded, 2000);
+      const duration = decoded.duration;
+      void fetch(peaksUrlFor(track), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: track.id, source: track.source, peaks, duration }),
+      });
+      if (token !== requestTokenRef.current) return;
+      try {
+        // Load with the media element's CURRENT absolute src so WaveSurfer's
+        // setSrc sees url === current src and skips the reload — it only
+        // re-renders the waveform from the peaks, leaving playback untouched.
+        const media = ws.getMediaElement();
+        const currentSrc = media.currentSrc || media.src;
+        if (currentSrc) await ws.load(currentSrc, peaks, duration);
+      } catch {
+        // Live waveform refresh is best-effort; placeholder stays otherwise.
+      }
+    } catch {
+      // Backfill is best-effort; a failure just means no cached peaks yet.
+    }
   }
 
   // Probe the audio endpoint with a Range request so the server has a
@@ -593,6 +751,14 @@ export default function StickyPlayerBar() {
   // track is already imported and plays without a 1-2s lookup stall.
   useEffect(() => {
     if (currentId == null) return;
+    // Read the queue fresh via getState instead of depending on it (see the
+    // dependency-array note below). Depending on `queue` re-fires this effect
+    // after every resolve — and since each resolve calls replaceTrack (which
+    // mutates the queue), a single Play on a large curator collection cascaded
+    // through the ENTIRE queue: hundreds of concurrent /api/track/lookup calls
+    // that saturate Bandcamp's rate limiter and never settle (the "lookup
+    // flood" bug). We only want to prefetch when the user moves to a new track.
+    const queue = usePlayerStore.getState().queue;
     const idx = queue.findIndex((t) => t.id === currentId);
     if (idx < 0) return;
     const candidates: TrackRowData[] = [];
@@ -639,7 +805,11 @@ export default function StickyPlayerBar() {
         }
       }
     })();
-  }, [currentId, queue, replaceTrack]);
+    // Intentionally depend on currentId only, NOT `queue`. See the note at the
+    // top of the effect: a `queue` dep turns each resolve into a fresh prefetch
+    // pass and cascades through the whole queue.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentId, replaceTrack]);
 
   // Audio prefetch removed: the new /api/audio/stream handler waits for
   // the full mp3 to land on disk before responding (one BC connection

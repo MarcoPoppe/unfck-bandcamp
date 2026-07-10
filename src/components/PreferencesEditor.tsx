@@ -163,6 +163,33 @@ export default function PreferencesEditor() {
 
         <div className="flex items-start justify-between gap-3 rounded border border-border bg-bg-base p-3">
           <div className="min-w-0">
+            <div className="text-sm font-medium">Progressive playback</div>
+            <div className="text-xs text-fg-muted">
+              Starts a track as soon as the first seconds arrive instead of
+              waiting for the whole file to download, which is what caused the
+              long stalls under Bandcamp&apos;s throttling. The waveform fills in
+              a moment after playback begins. Turn off if playback misbehaves to
+              restore the classic full-download-then-play path.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => update({ progressivePlayback: !prefs.progressivePlayback })}
+            aria-pressed={prefs.progressivePlayback}
+            className={`relative inline-flex h-6 w-11 flex-none items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+              prefs.progressivePlayback ? 'bg-accent' : 'bg-bg-elevated'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-fg-on-accent transition-transform ${
+                prefs.progressivePlayback ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-start justify-between gap-3 rounded border border-border bg-bg-base p-3">
+          <div className="min-w-0">
             <div className="text-sm font-medium">Auto-detect BPM</div>
             <div className="text-xs text-fg-muted">
               Detects tempo automatically a few seconds after a track starts.

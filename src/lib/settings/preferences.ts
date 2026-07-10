@@ -23,6 +23,15 @@ export interface Preferences {
    * starts playing — but only for tracks that don't have a BPM yet, so
    * skip-through browsing doesn't cost extra fetches. Default on. */
   autoDetectBpm: boolean;
+  /** When on, the player streams audio progressively: it hands WaveSurfer
+   * pre-computed peaks so it skips its blocking full-file fetch and lets
+   * the <audio> element start as soon as the first seconds arrive, instead
+   * of waiting for the whole MP3 to download (which under Bandcamp's CDN
+   * throttling meant 20-50s stalls). The real waveform is decoded in the
+   * background and cached for next time. Default on; this is the emergency
+   * off-switch if progressive playback misbehaves — turning it off restores
+   * the classic full-download-then-play path. */
+  progressivePlayback: boolean;
 }
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -32,6 +41,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   hidePlayed: false,
   hidePartialAlbums: false,
   autoDetectBpm: true,
+  progressivePlayback: true,
 };
 
 const STORAGE_KEY = 'unfck.prefs.v1';

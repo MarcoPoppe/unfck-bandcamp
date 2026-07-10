@@ -6,6 +6,8 @@ import {
   createWriteStream,
   readdirSync,
   unlinkSync,
+  readFileSync,
+  writeFileSync,
 } from 'node:fs';
 import { rename, unlink } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
@@ -162,6 +164,135 @@ export function cacheStream(cacheKey: string, streamUrl: string): Promise<void> 
   });
   promise.finally(() => inflight.delete(key));
   return promise;
+}
+
+/** Web ReadableStream we hand straight to the client while the same bytes
+ * are teed onto disk in the background. */
+export interface ProgressiveStream {
+  webStream: ReadableStream<Uint8Array>;
+  contentType: string;
+  contentLength: string | null;
+}
+
+/** The in-flight cache-write promise for a key, if one is running. Callers
+ * use this to avoid opening a second Bandcamp connection for the same file:
+ * if a download is already in flight, await it and serve from disk instead
+ * of teeing a fresh fetch. */
+export function getInflight(cacheKey: string): Promise<void> | undefined {
+  return inflight.get(sanitizeKey(cacheKey));
+}
+
+let progressiveTmpSeq = 0;
+
+/** Start a single Bandcamp fetch and tee it: one branch streams straight to
+ * the caller (progressive playback — first byte immediately), the other is
+ * written to the on-disk cache in the background. `inflight` is reserved
+ * SYNCHRONOUSLY (before the await on fetch) so a request that arrives while
+ * this one is still awaiting headers sees the reservation and waits for the
+ * download instead of opening a second Bandcamp connection. The inflight
+ * promise resolves on full disk write, so it survives a client disconnect
+ * (a skip mid-load still finishes caching for next time). Throws if Bandcamp
+ * doesn't hand us a usable body; the caller falls back to a refresh + retry. */
+export function beginProgressiveStream(
+  cacheKey: string,
+  streamUrl: string,
+): Promise<ProgressiveStream> {
+  const key = sanitizeKey(cacheKey);
+  const dest = getCachedPath(key);
+  // Unique tmp path per call so the rare double-fetch race can't have two
+  // writers on the same temp file.
+  const tmpPath = `${dest}.tmp.${process.pid}.${progressiveTmpSeq++}`;
+  let markDone: () => void = () => {};
+  let markFailed: (err: unknown) => void = () => {};
+  const donePromise = new Promise<void>((res, rej) => {
+    markDone = res;
+    markFailed = rej;
+  });
+  inflight.set(key, donePromise);
+  donePromise.catch(() => {}).finally(() => inflight.delete(key));
+
+  return (async (): Promise<ProgressiveStream> => {
+    // Time out the *header* wait only. Once Bandcamp answers, the (possibly
+    // throttled) body may stream slowly for a long time — that's fine and must
+    // not be aborted, which is why we clear the timer as soon as fetch resolves.
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 15_000);
+    let res: Response;
+    try {
+      res = await fetch(streamUrl, { signal: ac.signal });
+    } catch (err) {
+      clearTimeout(timer);
+      failedAt.set(key, Date.now());
+      markFailed(err);
+      throw err;
+    }
+    clearTimeout(timer);
+    if (!res.ok || !res.body) {
+      failedAt.set(key, Date.now());
+      const err = new Error(`upstream returned ${res.status}`);
+      markFailed(err);
+      throw err;
+    }
+    const [clientBranch, diskBranch] = res.body.tee();
+    void (async () => {
+      try {
+        await pipeline(Readable.fromWeb(diskBranch as never), createWriteStream(tmpPath));
+        await rename(tmpPath, dest);
+        writesSincePrune += 1;
+        if (writesSincePrune >= PRUNE_EVERY) {
+          writesSincePrune = 0;
+          pruneCache();
+        }
+        markDone();
+      } catch (err) {
+        try {
+          await unlink(tmpPath);
+        } catch {
+          // ignore cleanup error
+        }
+        failedAt.set(key, Date.now());
+        markFailed(err);
+      }
+    })();
+    return {
+      webStream: clientBranch,
+      contentType: res.headers.get('content-type') ?? 'audio/mpeg',
+      contentLength: res.headers.get('content-length'),
+    };
+  })();
+}
+
+/** Pre-computed waveform peaks + duration for a track, cached next to the
+ * audio file as `<key>.peaks.json`. Handing these to WaveSurfer lets it skip
+ * its blocking full-file fetch, so playback can start progressively. */
+export interface CachedPeaks {
+  peaks: number[][];
+  duration: number;
+}
+
+function getPeaksPath(cacheKey: string): string {
+  return join(getCacheDir(), `${sanitizeKey(cacheKey)}.peaks.json`);
+}
+
+export function getCachedPeaks(cacheKey: string): CachedPeaks | null {
+  const p = getPeaksPath(cacheKey);
+  if (!existsSync(p)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(p, 'utf8')) as CachedPeaks;
+    if (!Array.isArray(parsed.peaks) || parsed.peaks.length === 0) return null;
+    if (typeof parsed.duration !== 'number' || !Number.isFinite(parsed.duration)) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedPeaks(cacheKey: string, data: CachedPeaks): void {
+  try {
+    writeFileSync(getPeaksPath(cacheKey), JSON.stringify(data));
+  } catch {
+    // Best-effort: a failed peak-cache write just means we recompute next time.
+  }
 }
 
 export interface RangeServeResult {

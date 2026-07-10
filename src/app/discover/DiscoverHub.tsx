@@ -1297,6 +1297,18 @@ function DiggersTab({ initialDiggers }: { initialDiggers: DiggerCandidate[] }) {
   const [hideFollowed, setHideFollowed] = useState(true);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // Sync the local curator list with fresh server props. `refresh()`
+  // ("Find curators") calls router.refresh() after a scan, which re-renders
+  // this client component with new initialDiggers. useState only captured
+  // the FIRST initialDiggers, so without this the tab kept showing the
+  // previous scan's curators (or stale null-source rows that slip past the
+  // matchesSource filter) until a full page reload. Re-seed whenever the
+  // server hands us a new snapshot. Follow/ignore mutate `curators` locally
+  // without touching initialDiggers, so those optimistic updates survive.
+  useEffect(() => {
+    setDiggers(initialDiggers);
+  }, [initialDiggers]);
+
   // Lazy-load the playlist list the first time the user picks "playlist"
   // so the tab itself stays cheap to render.
   useEffect(() => {

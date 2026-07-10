@@ -50,3 +50,6 @@ docs/specs/
 docs/screenshots/
 docs/*.pdf
 docs/*.html
+
+# personal working data (generated DJ-set tracklists), kept local
+scripts/tracklists/
