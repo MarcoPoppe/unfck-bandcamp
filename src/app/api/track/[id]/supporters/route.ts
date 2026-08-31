@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { getDb } from '@/lib/db';
 import { getStoredAuth } from '@/lib/auth/store';
 import { fetchCollectorsPage } from '@/lib/bandcamp/fetch_collectors';
+import {
+  buildSupporterVariants,
+  parseSupporterCursor,
+  nextSupporterCursor,
+} from '@/lib/bandcamp/supporter_variants';
 import { assertLocalRequest, NO_STORE_HEADERS } from '@/lib/http/local_only';
 
 export const dynamic = 'force-dynamic';
@@ -49,22 +54,54 @@ export async function GET(req: Request, ctx: { params: Promise<{ id: string }> }
   const countParam = url.searchParams.get('count');
   const count = countParam ? Math.max(1, Math.min(160, Number(countParam))) : 80;
 
-  // Bandcamp scopes supporters per album for album tracks. We use the album
-  // id when available so single tracks within an album show the album's
-  // collectors. Standalone single-track releases use the track id directly.
-  const tralbumType: 'a' | 't' = row.bc_album_id ? 'a' : 't';
-  const tralbumId = row.bc_album_id ?? row.bc_track_id;
+  // Collectors attach to the tralbum a buyer actually purchased, so the
+  // release and the track permalink each carry their own list and either one
+  // can be empty. Walk both (album first) behind one cursor instead of
+  // picking a single variant — see supporter_variants.ts.
+  const variants = buildSupporterVariants({
+    bcTrackId: row.bc_track_id,
+    bcAlbumId: row.bc_album_id,
+  });
+  if (variants.length === 0) {
+    return NextResponse.json(
+      { ok: false, error: 'track has neither a bandcamp track id nor an album id' },
+      { status: 404, headers: NO_STORE_HEADERS },
+    );
+  }
+  const cursor = parseSupporterCursor(token, variants.length);
+  if (!cursor) {
+    // Cursor points past the last variant: hand back a final empty page so
+    // the client's auto-pagination stops instead of looping.
+    return NextResponse.json(
+      { ok: true, collectors: [], moreAvailable: false, nextToken: null },
+      { headers: NO_STORE_HEADERS },
+    );
+  }
+  const variant = variants[cursor.variantIndex];
 
   try {
     const page = await fetchCollectorsPage({
-      tralbumType,
-      tralbumId,
+      tralbumType: variant.tralbumType,
+      tralbumId: variant.tralbumId,
       cookieString: auth.cookieString,
       count,
-      token: token ?? null,
+      token: cursor.bcToken,
+    });
+    const next = nextSupporterCursor({
+      variantIndex: cursor.variantIndex,
+      variantCount: variants.length,
+      moreAvailable: page.moreAvailable,
+      nextToken: page.nextToken,
     });
     return NextResponse.json(
-      { ok: true, ...page, tralbumType, tralbumId },
+      {
+        ok: true,
+        collectors: page.collectors,
+        moreAvailable: next.moreAvailable,
+        nextToken: next.nextToken,
+        tralbumType: variant.tralbumType,
+        tralbumId: variant.tralbumId,
+      },
       { headers: NO_STORE_HEADERS },
     );
   } catch (err) {

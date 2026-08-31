@@ -522,8 +522,11 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
       try {
         // Auto-paginate every supporter the API will hand out. Bandcamp pages
         // are 80 each; 1000+ supporters takes a few seconds but keeps the UI
-        // honest about scale.
+        // honest about scale. The route walks two tralbum variants (release
+        // and track permalink), so the same fan can arrive twice — dedupe by
+        // fan id to keep the count and the React keys honest.
         const all: Supporter[] = [];
+        const seenFanIds = new Set<number>();
         let token: string | null = null;
         for (let i = 0; i < 200; i += 1) {
           const url = token
@@ -542,7 +545,11 @@ export default function TrackPermalinkClient({ data }: { data: TrackPermalinkDat
             setSupportersError(json.error ?? `Supporters fetch failed (${res.status})`);
             break;
           }
-          all.push(...(json.collectors ?? []));
+          for (const c of json.collectors ?? []) {
+            if (seenFanIds.has(c.fanId)) continue;
+            seenFanIds.add(c.fanId);
+            all.push(c);
+          }
           setSupporters([...all]);
           if (!json.moreAvailable || !json.nextToken) {
             setSupportersMore(false);
